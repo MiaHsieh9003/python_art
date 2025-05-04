@@ -11,9 +11,26 @@
 /**
  * Macros to manipulate pointer tags
  */
+// add by Mia
+// Tag definitions
+#define TAG_LEAF        0x1  // 01
+// #define TAG_LEAF_LINK   0x3  // 11
+#define TAG_MASK        0x3  //   // 二進位 11，用來選取兩個 tag bits
+
+//若為 1 則視為 leaf 節點
 #define IS_LEAF(x) (((uintptr_t)x & 1))
+// #define IS_LEAF_LINK(x)   (((uintptr_t)(x) & TAG_MASK) == TAG_LEAF_LINK)
+//將指標 x 標記為 leaf：把最低位設為 1。
 #define SET_LEAF(x) ((void*)((uintptr_t)x | 1))
+// #define IS_LEAF_LINK(x)   (((uintptr_t)(x) & TAG_MASK) == TAG_LEAF_LINK)
+//還原成真實的 leaf 指標（清除最低位元）
+
+// ~1 是 bitwise NOT，會變成 ...11111110
+// x & ~1 的效果是把 x 的最低位元（bit 0）變成 0，其餘不變
+// 把處理後的整數再轉回成 void pointer 指標型別。
 #define LEAF_RAW(x) ((void*)((uintptr_t)x & ~1))
+
+// #define LEAF_LINK_RAW(n) ((art_leaf_link *)((uintptr_t)(n) & ~1))
 
 
 /**
@@ -25,6 +42,17 @@ static inline art_node4* alloc_node4(void) {
     node->n.type = NODE4;
     return node;
 }
+
+/**
+ * Allocates a node8,
+ * initializes to zero and sets the type.
+ */
+static inline art_node10* alloc_node10(void) {
+    art_node10* node = calloc(1, sizeof(art_node10));
+    node->n.type = NODE10;
+    return node;
+}
+
 
 /**
  * Allocates a node16,
@@ -81,6 +109,7 @@ static void destroy_node(art_node *n) {
     int i;
     union {
         art_node4 *p1;
+        art_node10 *p5;
         art_node16 *p2;
         art_node48 *p3;
         art_node256 *p4;
@@ -90,6 +119,13 @@ static void destroy_node(art_node *n) {
             p.p1 = (art_node4*)n;
             for (i=0;i<n->num_children;i++) {
                 destroy_node(p.p1->children[i]);
+            }
+            break;
+
+        case NODE10:
+            p.p5 = (art_node10*)n;
+            for (i=0;i<n->num_children;i++) {
+                destroy_node(p.p5->children[i]);
             }
             break;
 
@@ -137,10 +173,17 @@ int destroy_art_tree(art_tree *t) {
  */
 extern inline uint64_t art_size(art_tree *t);
 
+// add by Mia
+// return node type
+static uint8_t find_child_type(art_node *n){
+    return n->type;
+}
+
 static art_node** find_child(art_node *n, unsigned char c) {
     int i, mask, bitfield;
     union {
         art_node4 *p1;
+        art_node10 *p5;
         art_node16 *p2;
         art_node48 *p3;
         art_node256 *p4;
@@ -153,10 +196,19 @@ static art_node** find_child(art_node *n, unsigned char c) {
                     return &p.p1->children[i];
             }
             break;
+        
 
-        {
-        __m128i cmp;
-        case NODE16:
+        case NODE10:
+            p.p5 = (art_node10*)n;
+            for (i=0;i < n->num_children; i++) {
+                if (p.p5->keys[i] == c)
+                    return &p.p5->children[i];
+            }
+            break;
+
+        
+        case NODE16:{
+            __m128i cmp;
             p.p2 = (art_node16*)n;
 
             // Compare the key to all 16 stored keys
@@ -220,6 +272,19 @@ static int check_prefix(art_node *n, char *key, int key_len, int depth) {
  * @return 0 on success.
  */
 static int leaf_matches(art_leaf *n, char *key, int key_len, int depth) {
+    //明確標記 depth 為未使用參數，避免編譯器警告
+    (void)depth;
+    // Fail if the key lengths are different
+    if (n->key_len != (uint32_t)key_len) return 1;
+
+    // Compare the keys starting at the depth
+    //int memcmp(const void *str1, const void *str2, size_t n)
+    // 如果返回值 = 0，则表示 str1 等于 str2
+    return memcmp(n->key, key, key_len);
+}
+// add by Mia
+/*
+static int leaf_matches_link(art_leaf_link *n, char *key, int key_len, int depth) {
     (void)depth;
     // Fail if the key lengths are different
     if (n->key_len != (uint32_t)key_len) return 1;
@@ -227,7 +292,7 @@ static int leaf_matches(art_leaf *n, char *key, int key_len, int depth) {
     // Compare the keys starting at the depth
     return memcmp(n->key, key, key_len);
 }
-
+*/
 /**
  * Searches for a value in the ART tree
  * @arg t The tree
@@ -254,7 +319,7 @@ void* art_search(art_tree *t, char *key, int key_len) {
         // Bail if the prefix does not match
         if (n->partial_len) {
             prefix_len = check_prefix(n, key, key_len, depth);
-            if (prefix_len != min(MAX_PREFIX_LEN, n->partial_len))
+            if (prefix_len != min(MAX_PREFIX_LEN, n->partial_len))  //partial_len為prefix length
                 return NULL;
             depth = depth + n->partial_len;
         }
@@ -266,6 +331,38 @@ void* art_search(art_tree *t, char *key, int key_len) {
     }
     return NULL;
 }
+//add by Mia
+
+// void* art_search_link(art_tree *t, char *key, int key_len) {
+//     art_node **child;
+//     art_node *n = t->root;
+//     int prefix_len, depth = 0;
+//     while (n) {
+//         // Might be a leaf
+//         if (IS_LEAF(n)) {
+//             n = LEAF_RAW(n);
+//             // Check if the expanded path matches
+//             if (!leaf_matches((art_leaf_link*)n, key, key_len, depth)) {
+//                 return ((art_leaf_link*)n)->value;
+//             }
+//             return NULL;
+//         }
+
+//         // Bail if the prefix does not match
+//         if (n->partial_len) {
+//             prefix_len = check_prefix(n, key, key_len, depth);
+//             if (prefix_len != min(MAX_PREFIX_LEN, n->partial_len))  //partial_len為prefix length
+//                 return NULL;
+//             depth = depth + n->partial_len;
+//         }
+
+//         // Recursively search
+//         child = find_child(n, key[depth]);
+//         n = (child) ? *child : NULL;
+//         depth++;
+//     }
+//     return NULL;
+// }
 
 // Find the minimum leaf under a node
 static art_leaf* minimum(art_node *n) {
@@ -277,6 +374,8 @@ static art_leaf* minimum(art_node *n) {
     switch (n->type) {
         case NODE4:
             return minimum(((art_node4*)n)->children[0]);
+        case NODE10:
+            return minimum(((art_node10*)n)->children[0]);
         case NODE16:
             return minimum(((art_node16*)n)->children[0]);
         case NODE48:
@@ -293,6 +392,33 @@ static art_leaf* minimum(art_node *n) {
     }
 }
 
+// add by Mia
+// Find the minimum leaf under a node
+// static art_leaf_link* minimum(art_node *n) {
+//     // Handle base cases
+//     if (!n) return NULL;
+//     if (IS_LEAF(n)) return LEAF_RAW(n);
+
+//     int idx;
+//     switch (n->type) {
+//         case NODE4:
+//             return minimum(((art_node4*)n)->children[0]);
+//         case NODE16:
+//             return minimum(((art_node16*)n)->children[0]);
+//         case NODE48:
+//             idx=0;
+//             while (!((art_node48*)n)->keys[idx]) idx++;
+//             idx = ((art_node48*)n)->keys[idx] - 1;
+//             return minimum(((art_node48*)n)->children[idx]);
+//         case NODE256:
+//             idx=0;
+//             while (!((art_node256*)n)->children[idx]) idx++;
+//             return minimum(((art_node256*)n)->children[idx]);
+//         default:
+//             abort();
+//     }
+// }
+
 // Find the maximum leaf under a node
 static art_leaf* maximum(art_node *n) {
     // Handle base cases
@@ -303,6 +429,8 @@ static art_leaf* maximum(art_node *n) {
     switch (n->type) {
         case NODE4:
             return maximum(((art_node4*)n)->children[n->num_children-1]);
+        case NODE10:
+            return maximum(((art_node10*)n)->children[n->num_children-1]);
         case NODE16:
             return maximum(((art_node16*)n)->children[n->num_children-1]);
         case NODE48:
@@ -319,13 +447,46 @@ static art_leaf* maximum(art_node *n) {
     }
 }
 
+//add by Mia
+// Find the maximum leaf under a node
+// static art_leaf_link* maximum(art_node *n) {
+//     // Handle base cases
+//     if (!n) return NULL;
+//     if (IS_LEAF(n)) return LEAF_RAW(n);
+
+//     int idx;
+//     switch (n->type) {
+//         case NODE4:
+//             return maximum(((art_node4*)n)->children[n->num_children-1]);
+//         case NODE16:
+//             return maximum(((art_node16*)n)->children[n->num_children-1]);
+//         case NODE48:
+//             idx=255;
+//             while (!((art_node48*)n)->keys[idx]) idx--;
+//             idx = ((art_node48*)n)->keys[idx] - 1;
+//             return maximum(((art_node48*)n)->children[idx]);
+//         case NODE256:
+//             idx=255;
+//             while (!((art_node256*)n)->children[idx]) idx--;
+//             return maximum(((art_node256*)n)->children[idx]);
+//         default:
+//             abort();
+//     }
+// }
+
 /**
  * Returns the minimum valued leaf
  */
 art_leaf* art_minimum(art_tree *t) {
     return minimum((art_node*)t->root);
 }
-
+/**
+ * Returns the minimum valued leaf
+ */
+// add by Mia haven't done
+// art_leaf* art_minimum_link(art_tree *t) {
+//     return minimum((art_node*)t->root);
+// }
 /**
  * Returns the maximum valued leaf
  */
@@ -341,7 +502,7 @@ static art_leaf* make_leaf(char *key, int key_len, void *value) {
     return l;
 }
 
-static int longest_common_prefix(art_leaf *l1, art_leaf *l2, int depth) {
+static unsigned int longest_common_prefix(art_leaf *l1, art_leaf *l2, int depth) {
     int max_cmp = min(l1->key_len, l2->key_len) - depth;
     int idx;
     for (idx=0; idx < max_cmp; idx++) {
@@ -400,12 +561,14 @@ static void add_child16(art_node16 *n, art_node **ref, unsigned char c, void *ch
         unsigned idx;
         if (bitfield) {
             idx = __builtin_ctz(bitfield);
-            memmove(n->keys+idx+1,n->keys+idx,n->n.num_children-idx);
-            memmove(n->children+idx+1,n->children+idx,
-                    (n->n.num_children-idx)*sizeof(void*));
-        } else
+            if (idx < 16) {
+                memmove(n->keys+idx+1,n->keys+idx,n->n.num_children-idx);
+                memmove(n->children+idx+1,n->children+idx,
+                        (n->n.num_children-idx)*sizeof(void*));
+            }
+        } else{
             idx = n->n.num_children;
-
+        }
         // Set the child
         n->keys[idx] = c;
         n->children[idx] = child;
@@ -427,6 +590,39 @@ static void add_child16(art_node16 *n, art_node **ref, unsigned char c, void *ch
     }
 }
 
+static void add_child10(art_node4 *n, art_node **ref, unsigned char c, void *child) {
+    if (n->n.num_children < 10) {
+        int idx;
+        for (idx=0; idx < n->n.num_children; idx++) {
+            if (c < n->keys[idx]) break;
+        }
+
+        // Shift to make room
+        memmove(n->keys+idx+1, n->keys+idx, n->n.num_children - idx);
+        memmove(n->children+idx+1, n->children+idx,
+                (n->n.num_children - idx)*sizeof(void*));
+
+        // Insert element
+        n->keys[idx] = c;
+        n->children[idx] = child;
+        n->n.num_children++;
+
+    } else {
+        art_node48 *new = alloc_node48();
+
+        // Copy the child pointers and the key map
+        memcpy(new->children, n->children,
+                sizeof(void*)*n->n.num_children);
+        memcpy(new->keys, n->keys,
+                sizeof(unsigned char)*n->n.num_children);
+        copy_header((art_node*)new, (art_node*)n);
+        *ref = (art_node*)new;
+        free(n);
+        add_child48(new, ref, c, child);
+    }
+}
+
+
 static void add_child4(art_node4 *n, art_node **ref, unsigned char c, void *child) {
     if (n->n.num_children < 4) {
         int idx;
@@ -445,7 +641,8 @@ static void add_child4(art_node4 *n, art_node **ref, unsigned char c, void *chil
         n->n.num_children++;
 
     } else {
-        art_node16 *new = alloc_node16();
+        // art_node16 *new = alloc_node16();
+        art_node10 *new = alloc_node10();
 
         // Copy the child pointers and the key map
         memcpy(new->children, n->children,
@@ -455,7 +652,8 @@ static void add_child4(art_node4 *n, art_node **ref, unsigned char c, void *chil
         copy_header((art_node*)new, (art_node*)n);
         *ref = (art_node*)new;
         free(n);
-        add_child16(new, ref, c, child);
+        // add_child16(new, ref, c, child);
+        add_child10(new, ref, c, child);
     }
 }
 
@@ -463,6 +661,8 @@ static void add_child(art_node *n, art_node **ref, unsigned char c, void *child)
     switch (n->type) {
         case NODE4:
             return add_child4((art_node4*)n, ref, c, child);
+        case NODE10:
+            return add_child10((art_node10*)n, ref, c, child);
         case NODE16:
             return add_child16((art_node16*)n, ref, c, child);
         case NODE48:
@@ -497,8 +697,8 @@ static int prefix_mismatch(art_node *n, char *key, int key_len, int depth) {
     }
     return idx;
 }
-
-static void* recursive_insert(art_node *n, art_node **ref, char *key, int key_len, void *value, int depth, int *old) {
+// void *old = recursive_insert(t->root, &t->root, key, key_len, value, 0, &old_val);
+static void* recursive_insert(art_node *n, art_node **ref, char *key, unsigned int key_len, void *value, unsigned int depth, int *old) {
 
     // If we are at a NULL node, inject a leaf
     if (!n) {
@@ -510,12 +710,13 @@ static void* recursive_insert(art_node *n, art_node **ref, char *key, int key_le
     if (IS_LEAF(n)) {
         art_leaf *l = LEAF_RAW(n);
 
-        // Check if we are updating an existing value
+        // Check if we are updating an existing value 
+        //leaf_matches() ==  0 if (l->key == key)
         if (!leaf_matches(l, key, key_len, depth)) {
             *old = 1;
             void *old_val = l->value;
-            l->value = value;
-            return old_val;
+            l->value = value;   //replace original data to value from input
+            return old_val; //return original data
         }
 
         // New value, we must split the leaf into a node4
@@ -525,7 +726,7 @@ static void* recursive_insert(art_node *n, art_node **ref, char *key, int key_le
         art_leaf *l2 = make_leaf(key, key_len, value);
 
         // Determine longest prefix
-        int longest_prefix = longest_common_prefix(l, l2, depth);
+        unsigned int longest_prefix = longest_common_prefix(l, l2, depth);
         new->n.partial_len = longest_prefix;
         memcpy(new->n.partial, key+depth, min(MAX_PREFIX_LEN, longest_prefix));
         // Add the leafs to the new node4
@@ -611,7 +812,9 @@ static void remove_child256(art_node256 *n, art_node **ref, unsigned char c) {
 
     // Resize to a node48 on underflow, not immediately to prevent
     // trashing if we sit on the 48/49 boundary
-    if (n->n.num_children == 37) {
+    // 已經明顯低於 Node48 容量，值得執行縮減，可避免資料結構在邊界值來回震盪時造成效能問題。
+    // if (n->n.num_children == 37) {
+    if (n->n.num_children == 42) {
         art_node48 *new = alloc_node48();
         *ref = (art_node*)new;
         copy_header((art_node*)new, (art_node*)n);
@@ -634,8 +837,10 @@ static void remove_child48(art_node48 *n, art_node **ref, unsigned char c) {
     n->children[pos-1] = NULL;
     n->n.num_children--;
 
-    if (n->n.num_children == 12) {
-        art_node16 *new = alloc_node16();
+    // if (n->n.num_children == 12) {
+    if (n->n.num_children == 8) {
+        // art_node16 *new = alloc_node16();
+        art_node10 *new = alloc_node10();
         *ref = (art_node*)new;
         copy_header((art_node*)new, (art_node*)n);
 
@@ -653,6 +858,22 @@ static void remove_child48(art_node48 *n, art_node **ref, unsigned char c) {
 }
 
 static void remove_child16(art_node16 *n, art_node **ref, art_node **l) {
+    int pos = l - n->children;
+    memmove(n->keys+pos, n->keys+pos+1, n->n.num_children - 1 - pos);
+    memmove(n->children+pos, n->children+pos+1, (n->n.num_children - 1 - pos)*sizeof(void*));
+    n->n.num_children--;
+
+    if (n->n.num_children == 3) {
+        art_node4 *new = alloc_node4();
+        *ref = (art_node*)new;
+        copy_header((art_node*)new, (art_node*)n);
+        memcpy(new->keys, n->keys, 4);
+        memcpy(new->children, n->children, 4*sizeof(void*));
+        free(n);
+    }
+}
+
+static void remove_child10(art_node10 *n, art_node **ref, art_node **l) {
     int pos = l - n->children;
     memmove(n->keys+pos, n->keys+pos+1, n->n.num_children - 1 - pos);
     memmove(n->children+pos, n->children+pos+1, (n->n.num_children - 1 - pos)*sizeof(void*));
@@ -703,6 +924,8 @@ static void remove_child(art_node *n, art_node **ref, unsigned char c, art_node 
     switch (n->type) {
         case NODE4:
             return remove_child4((art_node4*)n, ref, l);
+        case NODE10:
+            return remove_child10((art_node10*)n, ref, l);
         case NODE16:
             return remove_child16((art_node16*)n, ref, l);
         case NODE48:
@@ -789,6 +1012,13 @@ static int recursive_iter(art_node *n, art_callback cb, void *data) {
         case NODE4:
             for (int i=0; i < n->num_children; i++) {
                 res = recursive_iter(((art_node4*)n)->children[i], cb, data);
+                if (res) return res;
+            }
+            break;
+
+        case NODE10:
+            for (int i=0; i < n->num_children; i++) {
+                res = recursive_iter(((art_node10*)n)->children[i], cb, data);
                 if (res) return res;
             }
             break;
@@ -928,6 +1158,7 @@ static art_node* recursive_copy(art_node *n) {
 
     union {
         art_node4 *node4;
+        art_node10 *node10;
         art_node16 *node16;
         art_node48 *node48;
         art_node256 *node256;
@@ -941,6 +1172,15 @@ static art_node* recursive_copy(art_node *n) {
                 p.node4->children[i] = recursive_copy(((art_node4*)n)->children[i]);
             }
             return (art_node*)p.node4;
+
+        case NODE10:
+            p.node10 = alloc_node10();
+            copy_header((art_node*)p.node10, n);
+            memcpy(p.node10->keys, ((art_node10*)n)->keys, 4);
+            for (int i=0; i < n->num_children; i++) {
+                p.node4->children[i] = recursive_copy(((art_node10*)n)->children[i]);
+            }
+            return (art_node*)p.node10;
 
         case NODE16:
             p.node16 = alloc_node16();
@@ -1049,6 +1289,13 @@ static inline art_node* iterator_get_child_node(art_iterator *iterator) {
         case NODE4:
             for (; iterator->pos < node->num_children; iterator->pos++) {
                 next = ((art_node4*)node)->children[iterator->pos];
+                if (next) break;
+            }
+            break;
+
+        case NODE10:
+            for (; iterator->pos < node->num_children; iterator->pos++) {
+                next = ((art_node10*)node)->children[iterator->pos];
                 if (next) break;
             }
             break;

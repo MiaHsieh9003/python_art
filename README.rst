@@ -4,7 +4,7 @@ pyart - Adaptive Radix Tree
 
 |travis| |bitdeli|
 
-.. |travis| image:: https://secure.travis-ci.org/blackwithwhite666/pyart.png?branch=master
+.. |travis| image:: https://secure.Atravis-ci.org/blackwithwhite666/pyart.png?branch=master
    :alt: Travis badge
    :target: https://travis-ci.org/blackwithwhite666/pyart
 
@@ -69,11 +69,11 @@ Iteration over each element of tree:
 
     from pyart import Tree
     t = Tree()
-    t['foo'] = object()
+    t[b'foo'] = object()
     def cb(key, value): print(key, value)
     t.each(cb)
     >>> ('foo', <object object at 0x7f186020bd70>)
-    t['foobar'] = object()
+    t[b'foobar'] = object()
     t.each(cb)
     >>> ('foo', <object object at 0x7f186020bd70>)
     >>> ('foobar', <object object at 0x7f186020bd80>)

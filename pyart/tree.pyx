@@ -86,6 +86,7 @@ cdef object populate_list(Iterator iterator, Py_ssize_t size):
 cdef class Tree(object):
     cdef art_tree *_c_tree
 
+    # 初始化 C-level 屬性（如指標），C/Cython
     def __cinit__(self):
         self._c_tree = <art_tree *>calloc(1, sizeof(art_tree))
         if self._c_tree is NULL:
@@ -99,6 +100,7 @@ cdef class Tree(object):
             destroy_art_tree(self._c_tree)
             free(self._c_tree)
 
+    # 初始化 Python-level 屬性、接收參數，Python
     def __init__(self, *args, **kwargs):
         self.update(*args, **kwargs)
 
@@ -115,6 +117,7 @@ cdef class Tree(object):
             raise KeyError("Key {0!r} not found!".format(key))
         return <object>c_value
 
+    # this is delete
     cpdef pop(self, bytes key, default=None):
         cdef char* c_key = key
         cdef Py_ssize_t length = len(key)
@@ -127,6 +130,7 @@ cdef class Tree(object):
         Py_DECREF(obj)
         return obj
 
+    # update() 可以一次更新好幾個，replace() 只能一次更新一個
     cpdef replace(self, bytes key, object value):
         cdef char* c_key = key
         cdef Py_ssize_t length = len(key)
@@ -168,6 +172,7 @@ cdef class Tree(object):
             cdef art_leaf* c_leaf = art_maximum(self._c_tree)
             return (c_leaf.key[:c_leaf.key_len], <object>c_leaf.value)
 
+    # iterrate full tree
     def each(self, callback, prefix=None):
         walk_tree(self._c_tree, callback, prefix)
 
@@ -203,6 +208,7 @@ cdef class Tree(object):
     def items(self):
         return populate_list(self.iteritems(), self.size())
 
+    # update() 可以一次更新好幾個，replace() 只能一次更新一個
     def update(self, *args, **kwargs):
         if args:
             if len(args) != 1:

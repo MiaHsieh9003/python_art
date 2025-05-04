@@ -5,23 +5,24 @@
 #define ART_H
 
 #define NODE4   1
+#define NODE10   5
 #define NODE16  2
 #define NODE48  3
 #define NODE256 4
 
-#define MAX_PREFIX_LEN 10
+#define MAX_PREFIX_LEN 12
 
 typedef int(*art_callback)(void *data, const char *key, uint32_t key_len, void *value);
 
-/**
+/** 
  * This struct is included as part
  * of all the various node sizes
  */
 typedef struct {
     uint8_t type;
     uint8_t num_children;
-    uint32_t partial_len;
-    char partial[MAX_PREFIX_LEN];
+    uint16_t partial_len;   //prefix length
+    char partial[MAX_PREFIX_LEN]; //prefix string
 } art_node;
 
 /**
@@ -35,6 +36,15 @@ typedef struct {
 
 /**
  * Node with 16 children
+ */
+typedef struct {
+    art_node n;
+    unsigned char keys[10];
+    art_node *children[10];
+} art_node10;
+
+/**
+ * Node with 32 children
  */
 typedef struct {
     art_node n;
@@ -70,6 +80,14 @@ typedef struct {
     unsigned char key[];
 } art_leaf;
 
+// typedef struct art_leaf_link{
+//     //add by Mia
+//     struct art_leaf_link *next;
+//     void *value;
+//     uint32_t key_len;
+//     unsigned char key[];
+// } art_leaf_link;
+
 /**
  * Main struct, points to root.
  */
@@ -100,6 +118,12 @@ int init_art_tree(art_tree *t);
  * @return 0 on success.
  */
 int destroy_art_tree(art_tree *t);
+
+/*
+* add by Mia
+* @return node type
+*/
+static uint8_t find_child_type(art_node *n);
 
 /**
  * Returns the size of the ART tree.

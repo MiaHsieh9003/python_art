@@ -1,0 +1,25 @@
+Ctrl + Shift + P → Reopen folder in WSL
+
+readme步驟:
+pip install -e .    //即時反映pyart修改
+//若改了執行path，則須編輯 .vscode/c_cpp_properties.json，改"name": "WSL"
+pip install pyart
+python3 setup.py build_ext --inplace
+
+重新清除tox:  rm -rf .tox/
+python3 -m tox
+/* 若有d槽錯誤Permission denied: '/mnt/d/lab/ART-in-word-based/pyart/.tox/.pkg/.meta/pyart.egg-info.__bkp__'")]
+* 可以搬到 WSL 本地磁碟（~/）避免這些問題，讓編譯與測試更穩定，以下為方法
+* cp -r /mnt/d/lab/ART-in-word-based ~/ART-in-word-based
+* cd ~/ART-in-word-based/pyart    //其中: /home/你的帳號/ART-in-word-based/ = ~/ART-in-word-based/
+* python3 -m tox
+*/
+valgrind --leak-check=full python3 -m nose2 pyart.tests
+
+python3 -m nose2 pyart.tests.test_tree.TestTree.test_big_iter
+
+Ctrl + Shift + P → C/C++: Edit Configurations (UI) => 編輯c_cpp_properties.json
+
+
+
+

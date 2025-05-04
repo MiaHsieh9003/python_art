@@ -20,7 +20,10 @@ class TestTree(TestCase):
         self.tree = Tree()
 
     def test_constructor(self):
-        tree = Tree(foo=1, bar=2)
+        # modify by Mia
+        tree = Tree()
+        tree[b'foo'] = 1
+        tree[b'bar'] = 2
         self.assertEqual(
             [(b'bar', 2), (b'foo', 1)],
             tree.items()
@@ -43,7 +46,7 @@ class TestTree(TestCase):
     def test_mapping(self):
         self.tree[b'foo'] = 1
         self.tree[b'bar'] = 2
-        self.assertEqual(self.tree[b'foo'], 1)
+        self.assertEqual(self.tree[b'foo'], 1)  #assertEqual:Testcase中檢測答案是否一致
         self.assertEqual(self.tree[b'bar'], 2)
         self.assertTrue(b'foo' in self.tree)
         self.assertTrue(b'bar' in self.tree)
@@ -172,7 +175,7 @@ class TestTree(TestCase):
         self.assertEqual([], tree.values())
 
     def test_big_iter(self):
-        d = {str(i): i for i in xrange(1024)}
+        d = {str(i).encode(): i for i in range(1024)}
         tree = Tree()
         tree.update(d)
         self.assertEqual(
@@ -181,22 +184,25 @@ class TestTree(TestCase):
         )
 
     def test_iter_from_single(self):
-        self.tree['gutenberg'] = None
+        self.tree[b'gutenberg'] = None
         self.assertEqual(
-            ['gutenberg'],
+            [b'gutenberg'],
             self.tree.keys(),
         )
 
     def test_update_using_kwargs(self):
         self.tree.update(
-            foo=1, bar=2, foobar=3, beer=4)
+            {b'foo': 1, b'bar': 2, b'foobar': 3, b'beer': 4}
+            )
         self.assertEqual(
-            [('bar', 2), ('beer', 4), ('foo', 1), ('foobar', 3)],
+            [(b'bar', 2), (b'beer', 4), (b'foo', 1), (b'foobar', 3)],
             self.tree.items()
         )
 
     def test_update_using_dict(self):
-        d = dict(foo=1, bar=2)
+        # modify by Mia
+        # d = dict(foo=1, bar=2)
+        d = {b'foo': 1, b'bar': 2}
         self.tree.update(d)
         self.assertEqual(
             [(b'bar', 2), (b'foo', 1)],
@@ -223,7 +229,9 @@ class TestTree(TestCase):
             self.tree.update({}, {})
 
     def test_get(self):
-        self.tree.update(foo=1)
+        # modify by Mia
+        # self.tree.update(foo=1)
+        self.tree.update({b'foo': 1})
         self.assertEqual(1, self.tree.get(b'foo'))
         with self.assertRaises(KeyError):
             self.tree.get(b'bar')
@@ -235,13 +243,25 @@ class TestTree(TestCase):
 
     def test_pop_on_missing_key(self):
         with self.assertRaises(KeyError):
-            self.tree.pop(b'foo')
+            self.tree.pop(b'foo')   # pop() is delete()
         self.assertEqual(1, self.tree.pop(b'foo', 1))
 
     def test_iterator_destruction(self):
-        #tree = Tree(foo=1, bar=2, foobar=3, beer=4)
+        # tree = Tree(foo=1, bar=2, foobar=3, beer=4)
+        tree = Tree()
+        tree[b'foo'] = 1
+        tree[b'bar'] = 2
+        tree[b'foobar'] = 3
+        tree[b'beer'] = 4
         tree = self.tree
-        tree.update(foo=1, bar=2, foobar=3, beer=4)
+        # modify by Mia
+        # tree.update(foo=1, bar=2, foobar=3, beer=4)
+        tree.update({
+            b'foo': 1,
+            b'bar': 2,
+            b'foobar': 3,
+            b'beer': 4
+        })
         iterator = iter(tree)
         self.assertEqual(b'bar', next(iterator))
         del iterator

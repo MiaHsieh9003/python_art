@@ -1,5 +1,5 @@
 """Adaptive Radix Tree (ART) implemetation for python."""
-
+# 有 __init__.py（即使是空的），才能被 Python 當作 package 匯入。
 VERSION = (0, 2, 3)
 
 __version__ = '.'.join(map(str, VERSION[0:3]))

@@ -16,7 +16,6 @@ cmdclass = {}
 extensions = []
 extension_kwargs = {}
 
-
 # try to find cython
 try:
     from Cython.Distutils import build_ext as build_ext_c
@@ -115,8 +114,9 @@ def source_extension(name):
 
 def prepare_sources(sources):
     def to_string(s):
-        if isinstance(s, unicode):
-            return s.encode('utf-8')
+        # if isinstance(s, unicode):
+        if isinstance(s, bytes):
+            return s.decode('utf-8')
         return s
     return [to_string(source) for source in sources]
 
@@ -203,7 +203,7 @@ setup(
     url=meta['homepage'],
     long_description=README + '\n\n' + CHANGES,
     keywords='thrift soa',
-    license='BSD',
+    license='BSD-3-Clause',
     cmdclass=cmdclass,
     ext_modules=extensions,
     packages=find_packages(),
@@ -213,8 +213,8 @@ setup(
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
         "Intended Audience :: System Administrators",
-        "License :: OSI Approved :: BSD License",
+        # "License :: OSI Approved :: BSD License",
         "Operating System :: POSIX",
-        "Programming Language :: Python :: 2.7",
+        "Programming Language :: Python :: 3.11",  # 2.7
     ],
 )
