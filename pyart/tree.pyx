@@ -248,6 +248,10 @@ cdef class Iterator(object):
         elif self.return_values:
             return <object>c_leaf.value
         else:
+            if c_leaf.key == NULL:
+                raise ValueError("Leaf key is NULL in pop()")
+            # Cython 的 c_leaf.key[:c_leaf.key_len] 實際上會轉成：
+            # __Pyx_PyBytes_FromStringAndSize(c_leaf->key, c_leaf->key_len);
             return c_leaf.key[:c_leaf.key_len]
 
     def __next__(self):

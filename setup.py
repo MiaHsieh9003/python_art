@@ -170,7 +170,7 @@ def add_doc(m):
 pats = {re_meta: add_default,
         re_vers: add_version,
         re_doc: add_doc}
-meta_fh = open(os.path.join(here, '{0}/__init__.py'.format(PACKAGE)))
+meta_fh = open(os.path.join(here, '{0}/__init__.py'.format(PACKAGE)), encoding="utf-8")
 try:
     meta = {}
     for line in meta_fh:

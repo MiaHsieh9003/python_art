@@ -58,11 +58,11 @@ static inline art_node10* alloc_node10(void) {
  * Allocates a node16,
  * initializes to zero and sets the type.
  */
-static inline art_node16* alloc_node16(void) {
-    art_node16* node = calloc(1, sizeof(art_node16));
-    node->n.type = NODE16;
-    return node;
-}
+// static inline art_node16* alloc_node16(void) {
+//     art_node16* node = calloc(1, sizeof(art_node16));
+//     node->n.type = NODE16;
+//     return node;
+// }
 
 /**
  * Allocates a node48,
@@ -129,12 +129,12 @@ static void destroy_node(art_node *n) {
             }
             break;
 
-        case NODE16:
-            p.p2 = (art_node16*)n;
-            for (i=0;i<n->num_children;i++) {
-                destroy_node(p.p2->children[i]);
-            }
-            break;
+        // case NODE16:
+        //     p.p2 = (art_node16*)n;
+        //     for (i=0;i<n->num_children;i++) {
+        //         destroy_node(p.p2->children[i]);
+        //     }
+        //     break;
 
         case NODE48:
             p.p3 = (art_node48*)n;
@@ -184,7 +184,7 @@ static art_node** find_child(art_node *n, unsigned char c) {
     union {
         art_node4 *p1;
         art_node10 *p5;
-        art_node16 *p2;
+        // art_node16 *p2;
         art_node48 *p3;
         art_node256 *p4;
     } p;
@@ -207,27 +207,27 @@ static art_node** find_child(art_node *n, unsigned char c) {
             break;
 
         
-        case NODE16:{
-            __m128i cmp;
-            p.p2 = (art_node16*)n;
+        // case NODE16:{
+        //     __m128i cmp;
+        //     p.p2 = (art_node16*)n;
 
-            // Compare the key to all 16 stored keys
-            cmp = _mm_cmpeq_epi8(_mm_set1_epi8(c),
-                    _mm_loadu_si128((__m128i*)p.p2->keys));
+        //     // Compare the key to all 16 stored keys
+        //     cmp = _mm_cmpeq_epi8(_mm_set1_epi8(c),
+        //             _mm_loadu_si128((__m128i*)p.p2->keys));
 
-            // Use a mask to ignore children that don't exist
-            mask = (1 << n->num_children) - 1;
-            bitfield = _mm_movemask_epi8(cmp) & mask;
+        //     // Use a mask to ignore children that don't exist
+        //     mask = (1 << n->num_children) - 1;
+        //     bitfield = _mm_movemask_epi8(cmp) & mask;
 
-            /*
-             * If we have a match (any bit set) then we can
-             * return the pointer match using ctz to get
-             * the index.
-             */
-            if (bitfield)
-                return &p.p2->children[__builtin_ctz(bitfield)];
-            break;
-        }
+        //     /*
+        //      * If we have a match (any bit set) then we can
+        //      * return the pointer match using ctz to get
+        //      * the index.
+        //      */
+        //     if (bitfield)
+        //         return &p.p2->children[__builtin_ctz(bitfield)];
+        //     break;
+        // }
 
         case NODE48:
             p.p3 = (art_node48*)n;
@@ -376,8 +376,8 @@ static art_leaf* minimum(art_node *n) {
             return minimum(((art_node4*)n)->children[0]);
         case NODE10:
             return minimum(((art_node10*)n)->children[0]);
-        case NODE16:
-            return minimum(((art_node16*)n)->children[0]);
+        // case NODE16:
+        //     return minimum(((art_node16*)n)->children[0]);
         case NODE48:
             idx=0;
             while (!((art_node48*)n)->keys[idx]) idx++;
@@ -431,8 +431,8 @@ static art_leaf* maximum(art_node *n) {
             return maximum(((art_node4*)n)->children[n->num_children-1]);
         case NODE10:
             return maximum(((art_node10*)n)->children[n->num_children-1]);
-        case NODE16:
-            return maximum(((art_node16*)n)->children[n->num_children-1]);
+        // case NODE16:
+        //     return maximum(((art_node16*)n)->children[n->num_children-1]);
         case NODE48:
             idx=255;
             while (!((art_node48*)n)->keys[idx]) idx--;
@@ -527,15 +527,16 @@ static void add_child256(art_node256 *n, art_node **ref, unsigned char c, void *
 static void add_child48(art_node48 *n, art_node **ref, unsigned char c, void *child) {
     if (n->n.num_children < 48) {
         int pos = 0;
-        while (n->children[pos]) pos++;
+        while (n->children[pos]) pos++; //find the first empty position
+        // Node 48 has a 256 byte key map, 48 children, c: the character
         n->children[pos] = child;
-        n->keys[c] = pos + 1;
+        n->keys[c] = pos + 1;   //why not = pos? 避免 c == 0 與 real index == 0 衝突, so the first position is 1, not 0
         n->n.num_children++;
     } else {
         art_node256 *new = alloc_node256();
         for (int i=0;i<256;i++) {
             if (n->keys[i]) {
-                new->children[i] = n->children[n->keys[i] - 1];
+                new->children[i] = n->children[n->keys[i] - 1]; //related to "n->keys[c] = pos + 1;", so needs "-1"
             }
         }
         copy_header((art_node*)new, (art_node*)n);
@@ -545,76 +546,72 @@ static void add_child48(art_node48 *n, art_node **ref, unsigned char c, void *ch
     }
 }
 
-static void add_child16(art_node16 *n, art_node **ref, unsigned char c, void *child) {
-    if (n->n.num_children < 16) {
-        __m128i cmp;
+// static void add_child16(art_node16 *n, art_node **ref, unsigned char c, void *child) {
+//     if (n->n.num_children < 16) {
+//         __m128i cmp;
 
-        // Compare the key to all 16 stored keys
-        cmp = _mm_cmplt_epi8(_mm_set1_epi8(c),
-                _mm_loadu_si128((__m128i*)n->keys));
+//         // Compare the key to all 16 stored keys
+//         cmp = _mm_cmplt_epi8(_mm_set1_epi8(c),
+//                 _mm_loadu_si128((__m128i*)n->keys));
 
-        // Use a mask to ignore children that don't exist
-        unsigned mask = (1 << n->n.num_children) - 1;
-        unsigned bitfield = _mm_movemask_epi8(cmp) & mask;
+//         // Use a mask to ignore children that don't exist
+//         unsigned mask = (1 << n->n.num_children) - 1;
+//         unsigned bitfield = _mm_movemask_epi8(cmp) & mask;
 
-        // Check if less than any
-        unsigned idx;
-        if (bitfield) {
-            idx = __builtin_ctz(bitfield);
-            if (idx < 16) {
-                memmove(n->keys+idx+1,n->keys+idx,n->n.num_children-idx);
-                memmove(n->children+idx+1,n->children+idx,
-                        (n->n.num_children-idx)*sizeof(void*));
-            }
-        } else{
-            idx = n->n.num_children;
+//         // Check if less than any
+//         unsigned idx;
+//         if (bitfield) {
+//             idx = __builtin_ctz(bitfield);
+//             if (idx < 16) {
+//                 memmove(n->keys+idx+1,n->keys+idx,n->n.num_children-idx);
+//                 memmove(n->children+idx+1,n->children+idx,
+//                         (n->n.num_children-idx)*sizeof(void*));
+//             }
+//         } else{
+//             idx = n->n.num_children;
+//         }
+//         // Set the child
+//         n->keys[idx] = c;
+//         n->children[idx] = child;
+//         n->n.num_children++;
+
+//     } else {
+//         art_node48 *new = alloc_node48();
+
+//         // Copy the child pointers and populate the key map
+//         memcpy(new->children, n->children,
+//                 sizeof(void*)*n->n.num_children);
+//         for (int i=0;i<n->n.num_children;i++) {
+//             new->keys[n->keys[i]] = i + 1;
+//         }
+//         copy_header((art_node*)new, (art_node*)n);
+//         *ref = (art_node*)new;
+//         free(n);
+//         add_child48(new, ref, c, child);
+//     }
+// }
+
+static void add_child10(art_node10 *n, art_node **ref, unsigned char c, void *child) {
+    if (n->n.num_children < 10) {
+        int idx = 0;
+        while (n->keys[idx] < c && idx < n->n.num_children) idx++;
+        for(int i = n->n.num_children; i >= idx; i--){
+            n->keys[i+1] = n->keys[i];
+            n->children[i+1] = n->children[i];
         }
-        // Set the child
         n->keys[idx] = c;
         n->children[idx] = child;
         n->n.num_children++;
-
-    } else {
+    }else{
         art_node48 *new = alloc_node48();
-
-        // Copy the child pointers and populate the key map
+        // Copy the child pointers and the key map
+        // memcpy(b, a, sizeof(a)); // 把 a 的內容複製到 b
         memcpy(new->children, n->children,
                 sizeof(void*)*n->n.num_children);
         for (int i=0;i<n->n.num_children;i++) {
             new->keys[n->keys[i]] = i + 1;
         }
-        copy_header((art_node*)new, (art_node*)n);
-        *ref = (art_node*)new;
-        free(n);
-        add_child48(new, ref, c, child);
-    }
-}
 
-static void add_child10(art_node4 *n, art_node **ref, unsigned char c, void *child) {
-    if (n->n.num_children < 10) {
-        int idx;
-        for (idx=0; idx < n->n.num_children; idx++) {
-            if (c < n->keys[idx]) break;
-        }
-
-        // Shift to make room
-        memmove(n->keys+idx+1, n->keys+idx, n->n.num_children - idx);
-        memmove(n->children+idx+1, n->children+idx,
-                (n->n.num_children - idx)*sizeof(void*));
-
-        // Insert element
-        n->keys[idx] = c;
-        n->children[idx] = child;
-        n->n.num_children++;
-
-    } else {
-        art_node48 *new = alloc_node48();
-
-        // Copy the child pointers and the key map
-        memcpy(new->children, n->children,
-                sizeof(void*)*n->n.num_children);
-        memcpy(new->keys, n->keys,
-                sizeof(unsigned char)*n->n.num_children);
         copy_header((art_node*)new, (art_node*)n);
         *ref = (art_node*)new;
         free(n);
@@ -663,8 +660,8 @@ static void add_child(art_node *n, art_node **ref, unsigned char c, void *child)
             return add_child4((art_node4*)n, ref, c, child);
         case NODE10:
             return add_child10((art_node10*)n, ref, c, child);
-        case NODE16:
-            return add_child16((art_node16*)n, ref, c, child);
+        // case NODE16:
+        //     return add_child16((art_node16*)n, ref, c, child);
         case NODE48:
             return add_child48((art_node48*)n, ref, c, child);
         case NODE256:
@@ -857,29 +854,32 @@ static void remove_child48(art_node48 *n, art_node **ref, unsigned char c) {
     }
 }
 
-static void remove_child16(art_node16 *n, art_node **ref, art_node **l) {
-    int pos = l - n->children;
-    memmove(n->keys+pos, n->keys+pos+1, n->n.num_children - 1 - pos);
-    memmove(n->children+pos, n->children+pos+1, (n->n.num_children - 1 - pos)*sizeof(void*));
-    n->n.num_children--;
+// static void remove_child16(art_node16 *n, art_node **ref, art_node **l) {
+//     int pos = l - n->children;
+//     memmove(n->keys+pos, n->keys+pos+1, n->n.num_children - 1 - pos);
+//     memmove(n->children+pos, n->children+pos+1, (n->n.num_children - 1 - pos)*sizeof(void*));
+//     n->n.num_children--;
 
-    if (n->n.num_children == 3) {
-        art_node4 *new = alloc_node4();
-        *ref = (art_node*)new;
-        copy_header((art_node*)new, (art_node*)n);
-        memcpy(new->keys, n->keys, 4);
-        memcpy(new->children, n->children, 4*sizeof(void*));
-        free(n);
-    }
-}
+//     if (n->n.num_children == 3) {
+//         art_node4 *new = alloc_node4();
+//         *ref = (art_node*)new;
+//         copy_header((art_node*)new, (art_node*)n);
+//         memcpy(new->keys, n->keys, 4);
+//         memcpy(new->children, n->children, 4*sizeof(void*));
+//         free(n);
+//     }
+// }
 
 static void remove_child10(art_node10 *n, art_node **ref, art_node **l) {
     int pos = l - n->children;
-    memmove(n->keys+pos, n->keys+pos+1, n->n.num_children - 1 - pos);
-    memmove(n->children+pos, n->children+pos+1, (n->n.num_children - 1 - pos)*sizeof(void*));
+    for(int i=pos;i<n->n.num_children-1;i++){
+        n->keys[i] = n->keys[i+1];
+        n->children[i] = n->children[i+1];
+    }
+    n->keys[n->n.num_children-1] = 0;
     n->n.num_children--;
 
-    if (n->n.num_children == 3) {
+    if (n->n.num_children <= 3) {
         art_node4 *new = alloc_node4();
         *ref = (art_node*)new;
         copy_header((art_node*)new, (art_node*)n);
@@ -926,8 +926,8 @@ static void remove_child(art_node *n, art_node **ref, unsigned char c, art_node 
             return remove_child4((art_node4*)n, ref, l);
         case NODE10:
             return remove_child10((art_node10*)n, ref, l);
-        case NODE16:
-            return remove_child16((art_node16*)n, ref, l);
+        // case NODE16:
+        //     return remove_child16((art_node16*)n, ref, l);
         case NODE48:
             return remove_child48((art_node48*)n, ref, c);
         case NODE256:
@@ -1023,12 +1023,12 @@ static int recursive_iter(art_node *n, art_callback cb, void *data) {
             }
             break;
 
-        case NODE16:
-            for (int i=0; i < n->num_children; i++) {
-                res = recursive_iter(((art_node16*)n)->children[i], cb, data);
-                if (res) return res;
-            }
-            break;
+        // case NODE16:
+        //     for (int i=0; i < n->num_children; i++) {
+        //         res = recursive_iter(((art_node16*)n)->children[i], cb, data);
+        //         if (res) return res;
+        //     }
+        //     break;
 
         case NODE48:
             for (int i=0; i < 256; i++) {
@@ -1182,14 +1182,14 @@ static art_node* recursive_copy(art_node *n) {
             }
             return (art_node*)p.node10;
 
-        case NODE16:
-            p.node16 = alloc_node16();
-            copy_header((art_node*)p.node16, n);
-            memcpy(p.node16->keys, ((art_node16*)n)->keys, 16);
-            for (int i=0; i < n->num_children; i++) {
-                p.node16->children[i] = recursive_copy(((art_node16*)n)->children[i]);
-            }
-            return (art_node*)p.node16;
+        // case NODE16:
+        //     p.node16 = alloc_node16();
+        //     copy_header((art_node*)p.node16, n);
+        //     memcpy(p.node16->keys, ((art_node16*)n)->keys, 16);
+        //     for (int i=0; i < n->num_children; i++) {
+        //         p.node16->children[i] = recursive_copy(((art_node16*)n)->children[i]);
+        //     }
+        //     return (art_node*)p.node16;
 
         case NODE48:
             p.node48 = alloc_node48();
@@ -1300,12 +1300,12 @@ static inline art_node* iterator_get_child_node(art_iterator *iterator) {
             }
             break;
 
-        case NODE16:
-            for (; iterator->pos < node->num_children; iterator->pos++) {
-                next = ((art_node16*)node)->children[iterator->pos];
-                if (next) break;
-            }
-            break;
+        // case NODE16:
+        //     for (; iterator->pos < node->num_children; iterator->pos++) {
+        //         next = ((art_node16*)node)->children[iterator->pos];
+        //         if (next) break;
+        //     }
+        //     break;
 
         case NODE48:
             for (; iterator->pos < 256; iterator->pos++) {

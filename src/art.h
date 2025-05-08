@@ -35,7 +35,7 @@ typedef struct {
 } art_node4;
 
 /**
- * Node with 16 children
+ * Node with 10 children
  */
 typedef struct {
     art_node n;
@@ -44,7 +44,7 @@ typedef struct {
 } art_node10;
 
 /**
- * Node with 32 children
+ * Node with 16 children
  */
 typedef struct {
     art_node n;
