@@ -5,7 +5,7 @@
 #define ART_H
 
 #define NODE4   1
-#define NODE10   5
+#define NODE10  5
 #define NODE16  2
 #define NODE48  3
 #define NODE256 4
@@ -58,8 +58,9 @@ typedef struct {
  */
 typedef struct {
     art_node n;
-    unsigned char keys[256];
-    art_node *children[48];
+    // unsigned char keys[256];
+    unsigned char keys[48];
+    art_node *children[48]; //connected to 48 children
 } art_node48;
 
 /**

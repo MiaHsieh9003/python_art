@@ -1,3 +1,4 @@
+# 透過 setup.py 編譯 C 擴充模組（pyart.tre:含 tree.pyx 和 art.c）
 import os
 import re
 import sys
@@ -136,6 +137,7 @@ modules = {
 for module, kwargs in modules.items():
     kwargs = dict(extension_kwargs, **kwargs)
     kwargs.setdefault('sources', [source_extension(module)])
+    kwargs['extra_compile_args'].extend(['-g', '-O0', '-Wno-unused-function']) # close warning from unused function
     kwargs['sources'] = prepare_sources(kwargs['sources'])
     ext = Extension('{0}.{1}'.format(PACKAGE, module), **kwargs)
     if suffix == '.pyx' and ext.sources[0].endswith('.c'):

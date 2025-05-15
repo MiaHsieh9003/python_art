@@ -13,8 +13,7 @@ class Callback(object):
         self.result.append(args)
 
 
-class TestTree(TestCase):
-
+class TestTree(TestCase):      
     def setUp(self):
         super(TestTree, self).setUp()
         self.tree = Tree()
@@ -176,14 +175,19 @@ class TestTree(TestCase):
 
     def test_big_iter(self):
         d = {str(i).encode(): i for i in range(1024)}
-        # d = {str(i).encode(): i for i in range(100)}
-        print("test_big_iter is started")
+        # d = {str(i).encode(): i for i in range(101)}
+        # d1 = {str(i).encode(): i for i in range(11,20)}
+        # d2 = {str(i).encode(): i for i in range(100,105)}
+        print("test_big_iter ")
         tree = Tree()
         tree.update(d)
-        # self.assertEqual(
-        #     sorted(d.keys()),
-        #     tree.keys(),
-        # )
+        # tree.update(d1)
+        # tree.update(d2)
+        print(tree.keys())
+        self.assertEqual(
+            sorted(d.keys()),
+            tree.keys(),
+        )
 
     def test_iter_from_single(self):
         self.tree[b'gutenberg'] = None

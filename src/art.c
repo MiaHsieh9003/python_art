@@ -180,7 +180,7 @@ static uint8_t find_child_type(art_node *n){
 }
 
 static art_node** find_child(art_node *n, unsigned char c) {
-    int i, mask, bitfield;
+    int i; //, mask, bitfield;
     union {
         art_node4 *p1;
         art_node10 *p5;
@@ -195,8 +195,7 @@ static art_node** find_child(art_node *n, unsigned char c) {
                 if (p.p1->keys[i] == c)
                     return &p.p1->children[i];
             }
-            break;
-        
+            break;        
 
         case NODE10:
             p.p5 = (art_node10*)n;
@@ -206,34 +205,18 @@ static art_node** find_child(art_node *n, unsigned char c) {
             }
             break;
 
-        
-        // case NODE16:{
-        //     __m128i cmp;
-        //     p.p2 = (art_node16*)n;
-
-        //     // Compare the key to all 16 stored keys
-        //     cmp = _mm_cmpeq_epi8(_mm_set1_epi8(c),
-        //             _mm_loadu_si128((__m128i*)p.p2->keys));
-
-        //     // Use a mask to ignore children that don't exist
-        //     mask = (1 << n->num_children) - 1;
-        //     bitfield = _mm_movemask_epi8(cmp) & mask;
-
-        //     /*
-        //      * If we have a match (any bit set) then we can
-        //      * return the pointer match using ctz to get
-        //      * the index.
-        //      */
-        //     if (bitfield)
-        //         return &p.p2->children[__builtin_ctz(bitfield)];
-        //     break;
-        // }
-
         case NODE48:
             p.p3 = (art_node48*)n;
-            i = p.p3->keys[c];
-            if (i)
-                return &p.p3->children[i-1];
+            // i = p.p3->keys[c];
+            // if (i)
+            //     return &p.p3->children[i-1];
+            for (i=0;i < n->num_children; i++) {
+                printf("p.p3->keys[i] = %d, c = %c\n", p.p3->keys[i], c);
+                if (p.p3->keys[i] == c){
+                    printf("i = %d, c = %c\n", i, c);
+                    return &p.p3->children[i];
+                }
+            }
             break;
 
         case NODE256:
@@ -379,10 +362,10 @@ static art_leaf* minimum(art_node *n) {
         // case NODE16:
         //     return minimum(((art_node16*)n)->children[0]);
         case NODE48:
-            idx=0;
-            while (!((art_node48*)n)->keys[idx]) idx++;
-            idx = ((art_node48*)n)->keys[idx] - 1;
-            return minimum(((art_node48*)n)->children[idx]);
+            // idx=0;
+            // while (!((art_node48*)n)->keys[idx]) idx++;
+            // idx = ((art_node48*)n)->keys[idx] - 1;
+            return minimum(((art_node48*)n)->children[0]);
         case NODE256:
             idx=0;
             while (!((art_node256*)n)->children[idx]) idx++;
@@ -434,10 +417,11 @@ static art_leaf* maximum(art_node *n) {
         // case NODE16:
         //     return maximum(((art_node16*)n)->children[n->num_children-1]);
         case NODE48:
-            idx=255;
-            while (!((art_node48*)n)->keys[idx]) idx--;
-            idx = ((art_node48*)n)->keys[idx] - 1;
-            return maximum(((art_node48*)n)->children[idx]);
+            return maximum(((art_node48*)n)->children[n->num_children-1]);
+            // idx=255;
+            // while (!((art_node48*)n)->keys[idx]) idx--;
+            // idx = ((art_node48*)n)->keys[idx] - 1;
+            // return maximum(((art_node48*)n)->children[idx]);
         case NODE256:
             idx=255;
             while (!((art_node256*)n)->children[idx]) idx--;
@@ -519,6 +503,7 @@ static void copy_header(art_node *dest, art_node *src) {
 }
 
 static void add_child256(art_node256 *n, art_node **ref, unsigned char c, void *child) {
+    printf("add_child256: n->n.num_children = %d\n", n->n.num_children);
     (void)ref;
     n->n.num_children++;
     n->children[c] = child;
@@ -526,18 +511,37 @@ static void add_child256(art_node256 *n, art_node **ref, unsigned char c, void *
 
 static void add_child48(art_node48 *n, art_node **ref, unsigned char c, void *child) {
     if (n->n.num_children < 48) {
-        int pos = 0;
-        while (n->children[pos]) pos++; //find the first empty position
+        printf("add_child48 < 48\n");
+        printf("---add_child48: n->keys = '%c' (%d)\n", n->keys[0], n->keys[0]);   
+        int idx = 0;
+        while ((n->keys[idx] < c)&& (idx < n->n.num_children)) idx++; //find the first empty position
         // Node 48 has a 256 byte key map, 48 children, c: the character
-        n->children[pos] = child;
-        n->keys[c] = pos + 1;   //why not = pos? 避免 c == 0 與 real index == 0 衝突, so the first position is 1, not 0
+        // n->children[idx] = child;
+        // n->keys[c] = idx + 1;   //why not = pos? 避免 c == 0 與 real index == 0 衝突, so the first position is 1, not 0
+        // for(int i = n->n.num_children; i >= idx; i--){
+        //     n->keys[i+1] = n->keys[i];
+        //     n->children[i+1] = n->children[i];
+        // }
+        memmove(n->keys+idx+1, n->keys+idx, n->n.num_children - idx);
+        memmove(n->children+idx+1, n->children+idx,
+                (n->n.num_children - idx)*sizeof(void*));
+        n->keys[idx] = c;
+        n->children[idx] = child;
         n->n.num_children++;
+        // for(int i=0; i<n->n.num_children; i++){
+        //     printf("add_child48: n->keys = %d,  ", n->keys[i]);   
+        // }
+        printf("\n");
+        printf("add_child48 n.num_children = %d, c = %c\n", n->n.num_children, c);
     } else {
+        printf("add_child48: n->n.num_children = %d\n", n->n.num_children);
         art_node256 *new = alloc_node256();
-        for (int i=0;i<256;i++) {
-            if (n->keys[i]) {
-                new->children[i] = n->children[n->keys[i] - 1]; //related to "n->keys[c] = pos + 1;", so needs "-1"
-            }
+        // for (int i=0;i<256;i++) {
+        for (int i=0;i<n->n.num_children;i++) {
+        //     if (n->keys[i]) {
+                // new->children[i] = n->children[n->keys[i] - 1]; //related to "n->keys[c] = pos + 1;", so needs "-1"
+                new->children[n->keys[i]] = n->children[i]; //related to "n->keys[c] = pos + 1;", so needs "-1"
+            // }
         }
         copy_header((art_node*)new, (art_node*)n);
         *ref = (art_node*)new;
@@ -595,6 +599,7 @@ static void add_child10(art_node10 *n, art_node **ref, unsigned char c, void *ch
     if (n->n.num_children < 10) {
         int idx = 0;
         while (n->keys[idx] < c && idx < n->n.num_children) idx++;
+        // skyrmion: don't need to shift "idx - num_children" times, only need "one" times
         for(int i = n->n.num_children; i >= idx; i--){
             n->keys[i+1] = n->keys[i];
             n->children[i+1] = n->children[i];
@@ -603,17 +608,23 @@ static void add_child10(art_node10 *n, art_node **ref, unsigned char c, void *ch
         n->children[idx] = child;
         n->n.num_children++;
     }else{
+        printf("add_child10: n->n.num_children = %d, c = %c\n", n->n.num_children, c);
+        // new = 指向 art_node48 結構的指標
         art_node48 *new = alloc_node48();
         // Copy the child pointers and the key map
         // memcpy(b, a, sizeof(a)); // 把 a 的內容複製到 b
         memcpy(new->children, n->children,
                 sizeof(void*)*n->n.num_children);
-        for (int i=0;i<n->n.num_children;i++) {
-            new->keys[n->keys[i]] = i + 1;
-        }
-
+        // for (int i=0;i<n->n.num_children;i++) {
+        //   // n->keys[i] = character, i + 1 = child index
+        //     new->keys[n->keys[i]] = i + 1;
+        // }
+        memcpy(new->keys, n->keys,
+            sizeof(unsigned char)*n->n.num_children);
+            
         copy_header((art_node*)new, (art_node*)n);
         *ref = (art_node*)new;
+        printf("add_child48 in add_child10: new->keys = %d\n", new->keys[0]);
         free(n);
         add_child48(new, ref, c, child);
     }
@@ -621,7 +632,9 @@ static void add_child10(art_node10 *n, art_node **ref, unsigned char c, void *ch
 
 
 static void add_child4(art_node4 *n, art_node **ref, unsigned char c, void *child) {
+    //why isn't n->n.num_children <=4 but <4? Because 如果已經有 4 個，那就不能再加入了
     if (n->n.num_children < 4) {
+        printf("add_child4 < 4, c = %c, n->n.num_children = %d, n->partial_len = %d\n",c, n->n.num_children, n->n.partial_len);
         int idx;
         for (idx=0; idx < n->n.num_children; idx++) {
             if (c < n->keys[idx]) break;
@@ -638,6 +651,7 @@ static void add_child4(art_node4 *n, art_node **ref, unsigned char c, void *chil
         n->n.num_children++;
 
     } else {
+        printf("add_child4 >4, c = %c, n->n.num_children = %d\n", c, n->n.num_children);
         // art_node16 *new = alloc_node16();
         art_node10 *new = alloc_node10();
 
@@ -655,6 +669,7 @@ static void add_child4(art_node4 *n, art_node **ref, unsigned char c, void *chil
 }
 
 static void add_child(art_node *n, art_node **ref, unsigned char c, void *child) {
+    printf("add child\n");
     switch (n->type) {
         case NODE4:
             return add_child4((art_node4*)n, ref, c, child);
@@ -696,15 +711,22 @@ static int prefix_mismatch(art_node *n, char *key, int key_len, int depth) {
 }
 // void *old = recursive_insert(t->root, &t->root, key, key_len, value, 0, &old_val);
 static void* recursive_insert(art_node *n, art_node **ref, char *key, unsigned int key_len, void *value, unsigned int depth, int *old) {
+    printf("key, depth = %s, %d\n", key, depth);
 
     // If we are at a NULL node, inject a leaf
+    // when initial creating the tree, t->root == n == NULL
     if (!n) {
+        printf("NULL node\n");
+        // 用 SET_LEAF(...) 標記成 tagged pointer（低位元 turn into 1）
+        // 得到的 *ref 是一個「非對齊」的指標, so can't initialize *ref directly
         *ref = (art_node*)SET_LEAF(make_leaf(key, key_len, value));
         return NULL;
     }
 
     // If we are at a leaf, we need to replace it with a node
+    printf("n->partial = %s, n->partial_len = %d, type = %d\n", n->partial, n->partial_len, n->type);
     if (IS_LEAF(n)) {
+        printf("IS_LEAF\n");
         art_leaf *l = LEAF_RAW(n);
 
         // Check if we are updating an existing value 
@@ -740,12 +762,14 @@ static void* recursive_insert(art_node *n, art_node **ref, char *key, unsigned i
 
     // Check if given node has a prefix
     if (n->partial_len) {
+        printf("n->partial_len != 0\n");
         // Determine if the prefixes differ, since we need to split
         int prefix_diff = prefix_mismatch(n, key, key_len, depth);
         if ((uint32_t)prefix_diff >= n->partial_len) {
             depth += n->partial_len;
             goto RECURSE_SEARCH;
         }
+        printf("key[depth+prefix_diff] = %c\n", key[depth+prefix_diff]);
 
         // Create a new node
         art_node4 *new = alloc_node4();
@@ -766,7 +790,6 @@ static void* recursive_insert(art_node *n, art_node **ref, char *key, unsigned i
             memcpy(n->partial, l->key+depth+prefix_diff+1,
                     min(MAX_PREFIX_LEN, n->partial_len));
         }
-
         // Insert the new leaf
         art_leaf *l = make_leaf(key, key_len, value);
         add_child4(new, ref, key[depth+prefix_diff], SET_LEAF(l));
@@ -774,10 +797,11 @@ static void* recursive_insert(art_node *n, art_node **ref, char *key, unsigned i
     }
 
 RECURSE_SEARCH:;
-
+    printf("RECURSE_SEARCH\n");
     // Find a child to recurse to
     art_node **child = find_child(n, key[depth]);
     if (child) {
+        printf("child exists, key[depth] = %c\n", key[depth]);
         return recursive_insert(*child, child, key, key_len, value, depth+1, old);
     }
 
@@ -797,6 +821,7 @@ RECURSE_SEARCH:;
  * the old value pointer is returned.
  */
 void* art_insert(art_tree *t, char *key, int key_len, void *value) {
+    printf("art_insert\n");
     int old_val = 0;
     void *old = recursive_insert(t->root, &t->root, key, key_len, value, 0, &old_val);
     if (!old_val) t->size++;
@@ -811,7 +836,7 @@ static void remove_child256(art_node256 *n, art_node **ref, unsigned char c) {
     // trashing if we sit on the 48/49 boundary
     // 已經明顯低於 Node48 容量，值得執行縮減，可避免資料結構在邊界值來回震盪時造成效能問題。
     // if (n->n.num_children == 37) {
-    if (n->n.num_children == 42) {
+    if (n->n.num_children <= 45) {
         art_node48 *new = alloc_node48();
         *ref = (art_node*)new;
         copy_header((art_node*)new, (art_node*)n);
@@ -819,8 +844,8 @@ static void remove_child256(art_node256 *n, art_node **ref, unsigned char c) {
         int pos = 0;
         for (int i=0;i<256;i++) {
             if (n->children[i]) {
+                new->keys[pos] = i;
                 new->children[pos] = n->children[i];
-                new->keys[i] = pos + 1;
                 pos++;
             }
         }
@@ -828,27 +853,38 @@ static void remove_child256(art_node256 *n, art_node **ref, unsigned char c) {
     }
 }
 
-static void remove_child48(art_node48 *n, art_node **ref, unsigned char c) {
-    int pos = n->keys[c];
-    n->keys[c] = 0;
-    n->children[pos-1] = NULL;
+// static void remove_child48(art_node48 *n, art_node **ref, unsigned char c) {
+static void remove_child48(art_node48 *n, art_node **ref, art_node **l) {
+    // int pos = n->keys[c];
+    // l = n->children[0]'s position, so "l - n->children" = the index of the removing child
+    // when you subtract two pointers of the same type that point into the same array, the result is:the number of elements between them (an int), not a byte address.
+    int pos = l - n->children;
+    memmove(n->keys+pos, n->keys+pos+1, n->n.num_children - 1 - pos);
+    memmove(n->children+pos, n->children+pos+1, (n->n.num_children - 1 - pos)*sizeof(void*));
+    // n->keys[c] = 0;
+    // n->children[pos-1] = NULL;
+    n->keys[n->n.num_children-1] = 0;
     n->n.num_children--;
 
     // if (n->n.num_children == 12) {
-    if (n->n.num_children == 8) {
+    if (n->n.num_children <= 8) {
         // art_node16 *new = alloc_node16();
         art_node10 *new = alloc_node10();
         *ref = (art_node*)new;
         copy_header((art_node*)new, (art_node*)n);
 
-        int child = 0;
-        for (int i=0;i<256;i++) {
-            pos = n->keys[i];
-            if (pos) {
-                new->keys[child] = i;
-                new->children[child] = n->children[pos - 1];
-                child++;
-            }
+        // int child = 0;
+        // for (int i=0;i<256;i++) {
+        //     pos = n->keys[i];
+        //     if (pos) {
+        //         new->keys[child] = i;
+        //         new->children[child] = n->children[pos - 1];
+        //         child++;
+        //     }
+        // }
+        for(int i=0; i<n->n.num_children; i++){
+            new->keys[i] = n->keys[i];
+            new->children[i] = n->children[i];
         }
         free(n);
     }
@@ -929,7 +965,7 @@ static void remove_child(art_node *n, art_node **ref, unsigned char c, art_node 
         // case NODE16:
         //     return remove_child16((art_node16*)n, ref, l);
         case NODE48:
-            return remove_child48((art_node48*)n, ref, c);
+            return remove_child48((art_node48*)n, ref, l);
         case NODE256:
             return remove_child256((art_node256*)n, ref, c);
         default:
@@ -1007,7 +1043,7 @@ static int recursive_iter(art_node *n, art_callback cb, void *data) {
         return cb(data, (const char*)l->key, l->key_len, l->value);
     }
 
-    int idx, res;
+    int res; //,idx
     switch (n->type) {
         case NODE4:
             for (int i=0; i < n->num_children; i++) {
@@ -1031,11 +1067,15 @@ static int recursive_iter(art_node *n, art_callback cb, void *data) {
         //     break;
 
         case NODE48:
-            for (int i=0; i < 256; i++) {
-                idx = ((art_node48*)n)->keys[i];
-                if (!idx) continue;
+            // for (int i=0; i < 256; i++) {
+            //     idx = ((art_node48*)n)->keys[i];
+            //     if (!idx) continue;
 
-                res = recursive_iter(((art_node48*)n)->children[idx-1], cb, data);
+            //     res = recursive_iter(((art_node48*)n)->children[idx-1], cb, data);
+            //     if (res) return res;
+            // }
+            for(int i=0; i < n->num_children; i++) {
+                res = recursive_iter(((art_node48*)n)->children[i], cb, data);
                 if (res) return res;
             }
             break;
@@ -1176,7 +1216,7 @@ static art_node* recursive_copy(art_node *n) {
         case NODE10:
             p.node10 = alloc_node10();
             copy_header((art_node*)p.node10, n);
-            memcpy(p.node10->keys, ((art_node10*)n)->keys, 4);
+            memcpy(p.node10->keys, ((art_node10*)n)->keys, 10);
             for (int i=0; i < n->num_children; i++) {
                 p.node4->children[i] = recursive_copy(((art_node10*)n)->children[i]);
             }
@@ -1194,7 +1234,8 @@ static art_node* recursive_copy(art_node *n) {
         case NODE48:
             p.node48 = alloc_node48();
             copy_header((art_node*)p.node48, n);
-            memcpy(p.node48->keys, ((art_node48*)n)->keys, 256);
+            // memcpy(p.node48->keys, ((art_node48*)n)->keys, 256);
+            memcpy(p.node48->keys, ((art_node48*)n)->keys, 48);
             for (int i=0; i < n->num_children; i++) {
                 p.node48->children[i] = recursive_copy(((art_node48*)n)->children[i]);
             }
@@ -1283,7 +1324,7 @@ static inline art_node* iterator_get_child_node(art_iterator *iterator) {
         return node;
     }
 
-    int idx;
+    // int idx;
     next = NULL;
     switch (node->type) {
         case NODE4:
@@ -1308,10 +1349,14 @@ static inline art_node* iterator_get_child_node(art_iterator *iterator) {
         //     break;
 
         case NODE48:
-            for (; iterator->pos < 256; iterator->pos++) {
-                idx = ((art_node48*)node)->keys[iterator->pos];
-                if (!idx) continue;
-                next = ((art_node48*)node)->children[idx-1];
+            // for (; iterator->pos < 256; iterator->pos++) {
+            //     idx = ((art_node48*)node)->keys[iterator->pos];
+            //     if (!idx) continue;
+            //     next = ((art_node48*)node)->children[idx-1];
+            //     if (next) break;
+            // }
+            for(; iterator->pos < node->num_children; iterator->pos++) {
+                next = ((art_node48*)node)->children[iterator->pos];
                 if (next) break;
             }
             break;
