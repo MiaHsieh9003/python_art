@@ -29,6 +29,7 @@
 // x & ~1 的效果是把 x 的最低位元（bit 0）變成 0，其餘不變
 // 把處理後的整數再轉回成 void pointer 指標型別。
 #define LEAF_RAW(x) ((void*)((uintptr_t)x & ~1))
+int max_partial_len = 0;
 
 // #define LEAF_LINK_RAW(n) ((art_leaf_link *)((uintptr_t)(n) & ~1))
 
@@ -94,6 +95,41 @@ int init_art_tree(art_tree *t) {
     return 0;
 }
 
+char *get_node_partial(art_node *n) {
+    switch (n->type) {
+        case NODE4:
+            return ((art_node4*)n)->partial;
+        case NODE10:
+            return ((art_node10*)n)->partial;
+        case NODE48:
+            return ((art_node48*)n)->partial;
+        case NODE256:
+            return ((art_node256*)n)->partial;
+        default:
+            return NULL;
+    }
+}
+
+int check_max_partial_len(art_node *n) {
+    int max_partial_len = 0;
+    switch (n->type) {
+        case NODE4:
+            max_partial_len = MAX_PREFIX_LEN_4;
+            break;
+        case NODE10:
+            max_partial_len = MAX_PREFIX_LEN_10;
+            break;
+        case NODE48:
+            max_partial_len = MAX_PREFIX_LEN_48;
+            break;
+        case NODE256:
+            max_partial_len = MAX_PREFIX_LEN_256;
+            break;
+        default:
+            break;
+    }
+    return max_partial_len;
+}
 // Recursively destroys the tree
 static void destroy_node(art_node *n) {
     // Break if null
@@ -241,10 +277,35 @@ static inline int min(int a, int b) {
  * the key and node.
  */
 static int check_prefix(art_node *n, char *key, int key_len, int depth) {
-    int max_cmp = min(min(n->partial_len, MAX_PREFIX_LEN), key_len - depth);
-    int idx;
+    int max_cmp = 0;
+    int idx = 0;
+    char *partial = NULL;
+    int max_partial_len = 0;
+    
+    switch (n->type) 
+    {
+        case NODE4:
+            partial = ((art_node4*)n)->partial;
+            max_partial_len = MAX_PREFIX_LEN_4;
+            break;
+        case NODE10:
+            partial = ((art_node10*)n)->partial;
+            max_partial_len = MAX_PREFIX_LEN_10;
+            break;
+        case NODE48:
+            partial = ((art_node48*)n)->partial;
+            max_partial_len = MAX_PREFIX_LEN_48;
+            break;
+        case NODE256:
+            partial = ((art_node256*)n)->partial;
+            max_partial_len = MAX_PREFIX_LEN_256;
+            break;
+        default:
+            break;
+    }
+    max_cmp = min(min(n->partial_len, max_partial_len), key_len - depth);
     for (idx=0; idx < max_cmp; idx++) {
-        if (n->partial[idx] != key[depth+idx])
+        if (partial[idx] != key[depth+idx])
             return idx;
     }
     return idx;
@@ -288,6 +349,7 @@ void* art_search(art_tree *t, char *key, int key_len) {
     art_node **child;
     art_node *n = t->root;
     int prefix_len, depth = 0;
+    int max_partial_len = 0;
     while (n) {
         // Might be a leaf
         if (IS_LEAF(n)) {
@@ -301,8 +363,9 @@ void* art_search(art_tree *t, char *key, int key_len) {
 
         // Bail if the prefix does not match
         if (n->partial_len) {
+            max_partial_len = check_max_partial_len(n);
             prefix_len = check_prefix(n, key, key_len, depth);
-            if (prefix_len != min(MAX_PREFIX_LEN, n->partial_len))  //partial_len為prefix length
+            if (prefix_len != min(max_partial_len, n->partial_len))  //partial_len為prefix length
                 return NULL;
             depth = depth + n->partial_len;
         }
@@ -330,7 +393,6 @@ void* art_search(art_tree *t, char *key, int key_len) {
 //             }
 //             return NULL;
 //         }
-
 //         // Bail if the prefix does not match
 //         if (n->partial_len) {
 //             prefix_len = check_prefix(n, key, key_len, depth);
@@ -338,7 +400,6 @@ void* art_search(art_tree *t, char *key, int key_len) {
 //                 return NULL;
 //             depth = depth + n->partial_len;
 //         }
-
 //         // Recursively search
 //         child = find_child(n, key[depth]);
 //         n = (child) ? *child : NULL;
@@ -381,7 +442,6 @@ static art_leaf* minimum(art_node *n) {
 //     // Handle base cases
 //     if (!n) return NULL;
 //     if (IS_LEAF(n)) return LEAF_RAW(n);
-
 //     int idx;
 //     switch (n->type) {
 //         case NODE4:
@@ -437,7 +497,6 @@ static art_leaf* maximum(art_node *n) {
 //     // Handle base cases
 //     if (!n) return NULL;
 //     if (IS_LEAF(n)) return LEAF_RAW(n);
-
 //     int idx;
 //     switch (n->type) {
 //         case NODE4:
@@ -499,7 +558,7 @@ static unsigned int longest_common_prefix(art_leaf *l1, art_leaf *l2, int depth)
 static void copy_header(art_node *dest, art_node *src) {
     dest->num_children = src->num_children;
     dest->partial_len = src->partial_len;
-    memcpy(dest->partial, src->partial, min(MAX_PREFIX_LEN, src->partial_len));
+    // memcpy(dest->partial, src->partial, min(MAX_PREFIX_LEN, src->partial_len));
 }
 
 static void add_child256(art_node256 *n, art_node **ref, unsigned char c, void *child) {
@@ -531,7 +590,6 @@ static void add_child48(art_node48 *n, art_node **ref, unsigned char c, void *ch
         // for(int i=0; i<n->n.num_children; i++){
         //     printf("add_child48: n->keys = %d,  ", n->keys[i]);   
         // }
-        printf("\n");
         printf("add_child48 n.num_children = %d, c = %c\n", n->n.num_children, c);
     } else {
         printf("add_child48: n->n.num_children = %d\n", n->n.num_children);
@@ -543,7 +601,9 @@ static void add_child48(art_node48 *n, art_node **ref, unsigned char c, void *ch
                 new->children[n->keys[i]] = n->children[i]; //related to "n->keys[c] = pos + 1;", so needs "-1"
             // }
         }
-        copy_header((art_node*)new, (art_node*)n);
+        copy_header((art_node*)new, (art_node*)n);      
+        memcpy(new->partial, n->partial, n->n.partial_len);
+        // (art_node256*)new->partial = (art_node48)n->partial;  
         *ref = (art_node*)new;
         free(n);
         add_child256(new, ref, c, child);
@@ -553,15 +613,12 @@ static void add_child48(art_node48 *n, art_node **ref, unsigned char c, void *ch
 // static void add_child16(art_node16 *n, art_node **ref, unsigned char c, void *child) {
 //     if (n->n.num_children < 16) {
 //         __m128i cmp;
-
 //         // Compare the key to all 16 stored keys
 //         cmp = _mm_cmplt_epi8(_mm_set1_epi8(c),
 //                 _mm_loadu_si128((__m128i*)n->keys));
-
 //         // Use a mask to ignore children that don't exist
 //         unsigned mask = (1 << n->n.num_children) - 1;
 //         unsigned bitfield = _mm_movemask_epi8(cmp) & mask;
-
 //         // Check if less than any
 //         unsigned idx;
 //         if (bitfield) {
@@ -578,10 +635,8 @@ static void add_child48(art_node48 *n, art_node **ref, unsigned char c, void *ch
 //         n->keys[idx] = c;
 //         n->children[idx] = child;
 //         n->n.num_children++;
-
 //     } else {
 //         art_node48 *new = alloc_node48();
-
 //         // Copy the child pointers and populate the key map
 //         memcpy(new->children, n->children,
 //                 sizeof(void*)*n->n.num_children);
@@ -615,16 +670,12 @@ static void add_child10(art_node10 *n, art_node **ref, unsigned char c, void *ch
         // memcpy(b, a, sizeof(a)); // 把 a 的內容複製到 b
         memcpy(new->children, n->children,
                 sizeof(void*)*n->n.num_children);
-        // for (int i=0;i<n->n.num_children;i++) {
-        //   // n->keys[i] = character, i + 1 = child index
-        //     new->keys[n->keys[i]] = i + 1;
-        // }
         memcpy(new->keys, n->keys,
             sizeof(unsigned char)*n->n.num_children);
             
-        copy_header((art_node*)new, (art_node*)n);
+        copy_header((art_node*)new, (art_node*)n);        
+        memcpy(new->partial, n->partial, n->n.partial_len);
         *ref = (art_node*)new;
-        printf("add_child48 in add_child10: new->keys = %d\n", new->keys[0]);
         free(n);
         add_child48(new, ref, c, child);
     }
@@ -661,6 +712,8 @@ static void add_child4(art_node4 *n, art_node **ref, unsigned char c, void *chil
         memcpy(new->keys, n->keys,
                 sizeof(unsigned char)*n->n.num_children);
         copy_header((art_node*)new, (art_node*)n);
+        // (art_node10*)new->partial = n->partial;
+        memcpy(new->partial, n->partial, n->n.partial_len);
         *ref = (art_node*)new;
         free(n);
         // add_child16(new, ref, c, child);
@@ -690,15 +743,40 @@ static void add_child(art_node *n, art_node **ref, unsigned char c, void *child)
  * Calculates the index at which the prefixes mismatch
  */
 static int prefix_mismatch(art_node *n, char *key, int key_len, int depth) {
-    int max_cmp = min(min(MAX_PREFIX_LEN, n->partial_len), key_len - depth);
-    int idx;
+    int max_cmp = 0;
+    int idx = 0;
+    char *partial = NULL;
+    int max_partial_len = 0;
+
+    switch (n->type) 
+    {
+        case NODE4:
+            partial = ((art_node4*)n)->partial;
+            max_partial_len = MAX_PREFIX_LEN_4;
+            break;
+        case NODE10:
+            partial = ((art_node10*)n)->partial;
+            max_partial_len = MAX_PREFIX_LEN_10;
+            break;
+        case NODE48:
+            partial = ((art_node48*)n)->partial;
+            max_partial_len = MAX_PREFIX_LEN_48;
+            break;
+        case NODE256:
+            partial = ((art_node256*)n)->partial;
+            max_partial_len = MAX_PREFIX_LEN_256;
+            break;
+        default:
+            break;
+    }
+    max_cmp = min(min(max_partial_len, n->partial_len), key_len - depth);
     for (idx=0; idx < max_cmp; idx++) {
-        if (n->partial[idx] != key[depth+idx])
+        if (partial[idx] != key[depth+idx])
             return idx;
     }
 
     // If the prefix is short we can avoid finding a leaf
-    if (n->partial_len > MAX_PREFIX_LEN) {
+    if (n->partial_len > max_partial_len) {
         // Prefix is longer than what we've checked, find a leaf
         art_leaf *l = minimum(n);
         max_cmp = min(l->key_len, key_len)- depth;
@@ -712,7 +790,8 @@ static int prefix_mismatch(art_node *n, char *key, int key_len, int depth) {
 // void *old = recursive_insert(t->root, &t->root, key, key_len, value, 0, &old_val);
 static void* recursive_insert(art_node *n, art_node **ref, char *key, unsigned int key_len, void *value, unsigned int depth, int *old) {
     printf("key, depth = %s, %d\n", key, depth);
-
+    int max_prefix_len = 0;
+    char *n_partial = NULL;
     // If we are at a NULL node, inject a leaf
     // when initial creating the tree, t->root == n == NULL
     if (!n) {
@@ -724,7 +803,7 @@ static void* recursive_insert(art_node *n, art_node **ref, char *key, unsigned i
     }
 
     // If we are at a leaf, we need to replace it with a node
-    printf("n->partial = %s, n->partial_len = %d, type = %d\n", n->partial, n->partial_len, n->type);
+    printf("n->partial_len = %d, type = %d\n",  n->partial_len, n->type);
     if (IS_LEAF(n)) {
         printf("IS_LEAF\n");
         art_leaf *l = LEAF_RAW(n);
@@ -740,14 +819,14 @@ static void* recursive_insert(art_node *n, art_node **ref, char *key, unsigned i
 
         // New value, we must split the leaf into a node4
         art_node4 *new = alloc_node4();
-
+        max_prefix_len = MAX_PREFIX_LEN_4;
         // Create a new leaf
         art_leaf *l2 = make_leaf(key, key_len, value);
 
         // Determine longest prefix
         unsigned int longest_prefix = longest_common_prefix(l, l2, depth);
         new->n.partial_len = longest_prefix;
-        memcpy(new->n.partial, key+depth, min(MAX_PREFIX_LEN, longest_prefix));
+        memcpy(new->partial, key+depth, min(max_prefix_len, longest_prefix));
         // Add the leafs to the new node4
         *ref = (art_node*)new;
         // Check bounds, prefix length can be equal to key length (foo and foobar)
@@ -763,6 +842,7 @@ static void* recursive_insert(art_node *n, art_node **ref, char *key, unsigned i
     // Check if given node has a prefix
     if (n->partial_len) {
         printf("n->partial_len != 0\n");
+        n_partial = get_node_partial(n);
         // Determine if the prefixes differ, since we need to split
         int prefix_diff = prefix_mismatch(n, key, key_len, depth);
         if ((uint32_t)prefix_diff >= n->partial_len) {
@@ -773,22 +853,24 @@ static void* recursive_insert(art_node *n, art_node **ref, char *key, unsigned i
 
         // Create a new node
         art_node4 *new = alloc_node4();
+        max_partial_len = MAX_PREFIX_LEN_4;
         *ref = (art_node*)new;
         new->n.partial_len = prefix_diff;
-        memcpy(new->n.partial, n->partial, min(MAX_PREFIX_LEN, prefix_diff));
+        memcpy(new->partial, n_partial, min(max_partial_len, prefix_diff));
 
         // Adjust the prefix of the old node
-        if (n->partial_len <= MAX_PREFIX_LEN) {
-            add_child4(new, ref, n->partial[prefix_diff], n);
+        if (n->partial_len <= max_partial_len) {
+            add_child4(new, ref, n_partial[prefix_diff], n);
             n->partial_len -= (prefix_diff+1);
-            memmove(n->partial, n->partial+prefix_diff+1,
-                    min(MAX_PREFIX_LEN, n->partial_len));
+            memmove(n_partial, n_partial+prefix_diff+1,
+                    min(max_partial_len, n->partial_len));
         } else {
             n->partial_len -= (prefix_diff+1);
             art_leaf *l = minimum(n);
             add_child4(new, ref, l->key[depth+prefix_diff], n);
-            memcpy(n->partial, l->key+depth+prefix_diff+1,
-                    min(MAX_PREFIX_LEN, n->partial_len));
+            //only save the remaining part of prefix
+            memcpy(n_partial, l->key+depth+prefix_diff+1,       
+                    min(max_partial_len, n->partial_len));
         }
         // Insert the new leaf
         art_leaf *l = make_leaf(key, key_len, value);
@@ -831,16 +913,15 @@ void* art_insert(art_tree *t, char *key, int key_len, void *value) {
 static void remove_child256(art_node256 *n, art_node **ref, unsigned char c) {
     n->children[c] = NULL;
     n->n.num_children--;
-
     // Resize to a node48 on underflow, not immediately to prevent
     // trashing if we sit on the 48/49 boundary
     // 已經明顯低於 Node48 容量，值得執行縮減，可避免資料結構在邊界值來回震盪時造成效能問題。
     // if (n->n.num_children == 37) {
     if (n->n.num_children <= 45) {
+        max_partial_len = MAX_PREFIX_LEN_48;
         art_node48 *new = alloc_node48();
         *ref = (art_node*)new;
         copy_header((art_node*)new, (art_node*)n);
-
         int pos = 0;
         for (int i=0;i<256;i++) {
             if (n->children[i]) {
@@ -849,6 +930,7 @@ static void remove_child256(art_node256 *n, art_node **ref, unsigned char c) {
                 pos++;
             }
         }
+        memcpy(new->partial, n->partial, min(max_partial_len, n->n.partial_len));
         free(n);
     }
 }
@@ -868,6 +950,7 @@ static void remove_child48(art_node48 *n, art_node **ref, art_node **l) {
 
     // if (n->n.num_children == 12) {
     if (n->n.num_children <= 8) {
+        max_partial_len = MAX_PREFIX_LEN_4;
         // art_node16 *new = alloc_node16();
         art_node10 *new = alloc_node10();
         *ref = (art_node*)new;
@@ -886,6 +969,8 @@ static void remove_child48(art_node48 *n, art_node **ref, art_node **l) {
             new->keys[i] = n->keys[i];
             new->children[i] = n->children[i];
         }
+        memcpy(new->partial, n->partial, min(max_partial_len, n->n.partial_len));
+        // (art_node10*)new->partial = n->partial;
         free(n);
     }
 }
@@ -895,7 +980,6 @@ static void remove_child48(art_node48 *n, art_node **ref, art_node **l) {
 //     memmove(n->keys+pos, n->keys+pos+1, n->n.num_children - 1 - pos);
 //     memmove(n->children+pos, n->children+pos+1, (n->n.num_children - 1 - pos)*sizeof(void*));
 //     n->n.num_children--;
-
 //     if (n->n.num_children == 3) {
 //         art_node4 *new = alloc_node4();
 //         *ref = (art_node*)new;
@@ -916,11 +1000,14 @@ static void remove_child10(art_node10 *n, art_node **ref, art_node **l) {
     n->n.num_children--;
 
     if (n->n.num_children <= 3) {
+        max_partial_len = MAX_PREFIX_LEN_4;
         art_node4 *new = alloc_node4();
         *ref = (art_node*)new;
         copy_header((art_node*)new, (art_node*)n);
         memcpy(new->keys, n->keys, 4);
         memcpy(new->children, n->children, 4*sizeof(void*));
+        // (art_node4*)new->partial = n->partial;
+        memcpy(new->partial, n->partial, min(max_partial_len, n->n.partial_len));
         free(n);
     }
 }
@@ -930,25 +1017,28 @@ static void remove_child4(art_node4 *n, art_node **ref, art_node **l) {
     memmove(n->keys+pos, n->keys+pos+1, n->n.num_children - 1 - pos);
     memmove(n->children+pos, n->children+pos+1, (n->n.num_children - 1 - pos)*sizeof(void*));
     n->n.num_children--;
+    char *child_partial = NULL; 
+    int max_partial_len = MAX_PREFIX_LEN_4;
 
     // Remove nodes with only a single child
     if (n->n.num_children == 1) {
         art_node *child = n->children[0];
+        child_partial = get_node_partial(child);
         if (!IS_LEAF(child)) {
             // Concatenate the prefixes
             int prefix = n->n.partial_len;
-            if (prefix < MAX_PREFIX_LEN) {
-                n->n.partial[prefix] = n->keys[0];
+            if (prefix < max_partial_len) {
+                n->partial[prefix] = n->keys[0];
                 prefix++;
             }
-            if (prefix < MAX_PREFIX_LEN) {
-                int sub_prefix = min(child->partial_len, MAX_PREFIX_LEN - prefix);
-                memcpy(n->n.partial+prefix, child->partial, sub_prefix);
+            if (prefix < max_partial_len) {
+                int sub_prefix = min(child->partial_len, max_partial_len - prefix);
+                memcpy(n->partial+prefix, child_partial, sub_prefix);
                 prefix += sub_prefix;
             }
 
             // Store the prefix in the child
-            memcpy(child->partial, n->n.partial, min(prefix, MAX_PREFIX_LEN));
+            memcpy(child_partial, n->partial, min(prefix, max_partial_len));
             child->partial_len += n->n.partial_len + 1;
         }
         *ref = child;
@@ -976,6 +1066,7 @@ static void remove_child(art_node *n, art_node **ref, unsigned char c, art_node 
 static art_leaf* recursive_delete(art_node *n, art_node **ref, char *key, int key_len, int depth) {
     // Search terminated
     if (!n) return NULL;
+    int max_prefix_len = check_max_partial_len(n);
 
     // Handle hitting a leaf node
     if (IS_LEAF(n)) {
@@ -990,7 +1081,7 @@ static art_leaf* recursive_delete(art_node *n, art_node **ref, char *key, int ke
     // Bail if the prefix does not match
     if (n->partial_len) {
         int prefix_len = check_prefix(n, key, key_len, depth);
-        if (prefix_len != min(MAX_PREFIX_LEN, n->partial_len)) {
+        if (prefix_len != min(max_prefix_len, n->partial_len)) {
             return NULL;
         }
         depth += n->partial_len;
@@ -1208,6 +1299,7 @@ static art_node* recursive_copy(art_node *n) {
             p.node4 = alloc_node4();
             copy_header((art_node*)p.node4, n);
             memcpy(p.node4->keys, ((art_node4*)n)->keys, 4);
+            memcpy(p.node4->partial, ((art_node4*)n)->partial, MAX_PREFIX_LEN_4);
             for (int i=0; i < n->num_children; i++) {
                 p.node4->children[i] = recursive_copy(((art_node4*)n)->children[i]);
             }
@@ -1217,6 +1309,7 @@ static art_node* recursive_copy(art_node *n) {
             p.node10 = alloc_node10();
             copy_header((art_node*)p.node10, n);
             memcpy(p.node10->keys, ((art_node10*)n)->keys, 10);
+            memcpy(p.node10->partial, ((art_node10*)n)->partial, MAX_PREFIX_LEN_10);
             for (int i=0; i < n->num_children; i++) {
                 p.node4->children[i] = recursive_copy(((art_node10*)n)->children[i]);
             }
@@ -1236,6 +1329,7 @@ static art_node* recursive_copy(art_node *n) {
             copy_header((art_node*)p.node48, n);
             // memcpy(p.node48->keys, ((art_node48*)n)->keys, 256);
             memcpy(p.node48->keys, ((art_node48*)n)->keys, 48);
+            memcpy(p.node48->partial, ((art_node48*)n)->partial, MAX_PREFIX_LEN_48);
             for (int i=0; i < n->num_children; i++) {
                 p.node48->children[i] = recursive_copy(((art_node48*)n)->children[i]);
             }
@@ -1244,6 +1338,7 @@ static art_node* recursive_copy(art_node *n) {
         case NODE256:
             p.node256 = alloc_node256();
             copy_header((art_node*)p.node256, n);
+            memcpy(p.node256->partial, ((art_node256*)n)->partial, MAX_PREFIX_LEN_256);
             for (int i=0; i < 256; i++) {
                 p.node256->children[i] = recursive_copy(((art_node256*)n)->children[i]);
             }

@@ -10,7 +10,11 @@
 #define NODE48  3
 #define NODE256 4
 
-#define MAX_PREFIX_LEN 12
+// #define MAX_PREFIX_LEN 12
+#define MAX_PREFIX_LEN_4 9
+#define MAX_PREFIX_LEN_10 11
+#define MAX_PREFIX_LEN_48 13
+#define MAX_PREFIX_LEN_256 29
 
 typedef int(*art_callback)(void *data, const char *key, uint32_t key_len, void *value);
 
@@ -22,7 +26,7 @@ typedef struct {
     uint8_t type;
     uint8_t num_children;
     uint16_t partial_len;   //prefix length
-    char partial[MAX_PREFIX_LEN]; //prefix string
+    // char partial[MAX_PREFIX_LEN]; //prefix string
 } art_node;
 
 /**
@@ -32,6 +36,7 @@ typedef struct {
     art_node n;
     unsigned char keys[4];
     art_node *children[4];
+    char partial[MAX_PREFIX_LEN_4]; 
 } art_node4;
 
 /**
@@ -41,6 +46,7 @@ typedef struct {
     art_node n;
     unsigned char keys[10];
     art_node *children[10];
+    char partial[MAX_PREFIX_LEN_10]; 
 } art_node10;
 
 /**
@@ -61,6 +67,7 @@ typedef struct {
     // unsigned char keys[256];
     unsigned char keys[48];
     art_node *children[48]; //connected to 48 children
+    char partial[MAX_PREFIX_LEN_48]; 
 } art_node48;
 
 /**
@@ -69,6 +76,7 @@ typedef struct {
 typedef struct {
     art_node n;
     art_node *children[256];
+    char partial[MAX_PREFIX_LEN_256]; 
 } art_node256;
 
 /**
