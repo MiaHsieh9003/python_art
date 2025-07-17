@@ -1,17 +1,21 @@
+from libc.time cimport timespec
 from libc.stdlib cimport free, calloc
 from cpython.ref cimport Py_INCREF, Py_DECREF
 from cpython.list cimport PyList_New, PyList_SET_ITEM
+from libc.stdint cimport uint8_t, uint16_t, uint32_t, uint64_t
 
 
-cdef extern from "stdint.h" nogil:
+#cdef extern from "stdint.h" nogil:
 
-    ctypedef unsigned short uint16_t
-    ctypedef unsigned int uint32_t
-    ctypedef unsigned long uint64_t
+#    ctypedef unsigned short uint16_t
+#    ctypedef unsigned int uint32_t
+#    ctypedef unsigned long uint64_t
 
 
 cdef extern from "art.h":
 
+    cdef uint32_t track
+    cdef uint16_t domain
     ctypedef int(*art_callback)(void *data, const char *key, uint32_t key_len, void *value) except -1
 
     ctypedef struct art_tree:
@@ -29,8 +33,9 @@ cdef extern from "art.h":
     int init_art_tree(art_tree *c_tree)
     int destroy_art_tree(art_tree *c_tree)
 
+    void art_get_latency_energy()
     uint64_t art_size(art_tree *c_tree)
-    void* art_insert(art_tree *c_tree, char *key, int key_len, void *value)
+    void* art_insert(art_tree *c_tree, char *key, int key_len, void *value, bint origin_method)
     void* art_delete(art_tree *c_tree, char *key, int key_len)
     void* art_search(art_tree *c_tree, char *key, int key_len)
     art_leaf* art_minimum(art_tree *c_tree)
@@ -107,6 +112,9 @@ cdef class Tree(object):
     cdef Py_ssize_t size(self):
         return art_size(self._c_tree)
 
+    cpdef get_latency_energy(self):
+        art_get_latency_energy()
+
     cpdef get(self, bytes key, default=None):
         cdef char* c_key = key
         cdef Py_ssize_t length = len(key)
@@ -131,16 +139,18 @@ cdef class Tree(object):
         return obj
 
     # update() 可以一次更新好幾個，replace() 只能一次更新一個
-    cpdef replace(self, bytes key, object value):
+    cpdef replace(self, bytes key, bytes value, bint origin_method=False):
         cdef char* c_key = key
+        cdef char* c_val = value
         cdef Py_ssize_t length = len(key)
-        Py_INCREF(value)
-        cdef void* c_value = art_insert(self._c_tree, c_key, length, <void *>value)
+        #Py_INCREF(value)
+        cdef void* c_value = art_insert(self._c_tree, c_key, length, <void *>c_val, origin_method)
         if c_value is NULL:
             return None
-        cdef object obj = <object>c_value
-        Py_DECREF(obj)
-        return obj
+        #cdef object obj = <object>c_value
+        #Py_DECREF(obj)
+        return None
+        #return bytes(c_value)
 
     def __len__(self):
         return self.size()

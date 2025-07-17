@@ -1,32 +1,50 @@
 #include <stdint.h>
+#include <time.h>
 #include <stdbool.h>
 #include "ngx-queue.h"
+
 #ifndef ART_H
 #define ART_H
 
-#define NODE4   1
-#define NODE10  5
-#define NODE16  2
-#define NODE48  3
-#define NODE256 4
+#define NODE4   0
+#define NODE10  1
+#define NODE16  4
+#define NODE48  2
+#define NODE48_origin 5
+#define NODE256 3
 
-// #define MAX_PREFIX_LEN 12
-#define MAX_PREFIX_LEN_4 9
-#define MAX_PREFIX_LEN_10 11
-#define MAX_PREFIX_LEN_48 13
-#define MAX_PREFIX_LEN_256 29
+#define NODE4_len 1 //node 4 length is a fundamental unit in a track
+#define NODE10_len 2
+#define NODE48_len 8
+#define NODE256_len 33
 
-typedef int(*art_callback)(void *data, const char *key, uint32_t key_len, void *value);
+#define MIN_UNIT 32 // 32B
+
+#define MAX_PREFIX_LEN_origin 4
+#define MAX_PREFIX_LEN_4 10
+#define MAX_PREFIX_LEN_10 12
+#define MAX_PREFIX_LEN_48 14
+#define MAX_PREFIX_LEN_256 30
+
+#define MAX_DOMAIN_LEN 4U // 0~3 => total 4 len
+#define MAX_DOMAIN 3U // 0 ~ 3 => start from 0, 32B, 64B, 96B => total length 128*8 = 2^10 in a track
+
+static const int WORD_SIZE = 8; // 8 byte
+
+
+typedef int (*art_callback)(void *data, const char *key, uint32_t key_len, void *value);
 
 /** 
  * This struct is included as part
  * of all the various node sizes
  */
 typedef struct {
+    uint8_t prefix_too_long;
     uint8_t type;
-    uint8_t num_children;
     uint16_t partial_len;   //prefix length
-    // char partial[MAX_PREFIX_LEN]; //prefix string
+    uint8_t num_children;
+    uint32_t track_domain_id;
+    char partial[MAX_PREFIX_LEN_origin]; //prefix string
 } art_node;
 
 /**
@@ -36,6 +54,7 @@ typedef struct {
     art_node n;
     unsigned char keys[4];
     art_node *children[4];
+    uint32_t child_track_domain_id[4];
     char partial[MAX_PREFIX_LEN_4]; 
 } art_node4;
 
@@ -46,6 +65,7 @@ typedef struct {
     art_node n;
     unsigned char keys[10];
     art_node *children[10];
+    uint32_t child_track_domain_id[10];
     char partial[MAX_PREFIX_LEN_10]; 
 } art_node10;
 
@@ -58,15 +78,22 @@ typedef struct {
     art_node *children[16];
 } art_node16;
 
+typedef struct {
+    art_node n;
+    unsigned char keys[256];
+    art_node *children[48];
+} art_node48_origin;
+
 /**
  * Node with 48 children, but
  * a full 256 byte field.
  */
 typedef struct {
-    art_node n;
+    art_node n; //art_node n結構成員是物件（struct)用 ., art_node *n 結構成員是指標（struct*）用 ->
     // unsigned char keys[256];
     unsigned char keys[48];
     art_node *children[48]; //connected to 48 children
+    uint32_t child_track_domain_id[48];
     char partial[MAX_PREFIX_LEN_48]; 
 } art_node48;
 
@@ -76,6 +103,7 @@ typedef struct {
 typedef struct {
     art_node n;
     art_node *children[256];
+    uint32_t child_track_domain_id[256];
     char partial[MAX_PREFIX_LEN_256]; 
 } art_node256;
 
@@ -85,23 +113,18 @@ typedef struct {
  */
 typedef struct {
     void *value;
+    // uint8_t type;
     uint32_t key_len;
+    uint32_t track_domain_id;
     unsigned char key[];
 } art_leaf;
-
-// typedef struct art_leaf_link{
-//     //add by Mia
-//     struct art_leaf_link *next;
-//     void *value;
-//     uint32_t key_len;
-//     unsigned char key[];
-// } art_leaf_link;
 
 /**
  * Main struct, points to root.
  */
 typedef struct {
     art_node *root;
+    bool origin;
     uint64_t size;
 } art_tree;
 
@@ -116,6 +139,18 @@ typedef struct {
 } art_iterator;
 
 
+ typedef struct {
+    uint32_t track_domain_id;
+    unsigned char prefix[];
+ } prefix_long;
+/*
+Skyrmion operation
+*/
+/*
+get latency and energy
+*/
+void art_get_latency_energy();
+
 /**
  * Initializes an ART tree
  * @return 0 on success.
@@ -127,12 +162,6 @@ int init_art_tree(art_tree *t);
  * @return 0 on success.
  */
 int destroy_art_tree(art_tree *t);
-
-/*
-* add by Mia
-* @return node type
-*/
-static uint8_t find_child_type(art_node *n);
 
 /**
  * Returns the size of the ART tree.
@@ -150,7 +179,7 @@ inline uint64_t art_size(art_tree *t) {
  * @return NULL if the item was newly inserted, otherwise
  * the old value pointer is returned.
  */
-void* art_insert(art_tree *t, char *key, int key_len, void *value);
+void* art_insert(art_tree *t, char *key, int key_len, void *value, bool origin);
 
 /**
  * Deletes a value from the ART tree
@@ -239,5 +268,11 @@ int destroy_art_iterator(art_iterator *iterator);
  * @return The next leaf or NULL
  */
 art_leaf* art_iterator_next(art_iterator *iterator); 
+
+/*
+ * free node in skyrmion space
+ */
+void free_node(int type, uint32_t track_domain_id);
+
 
 #endif

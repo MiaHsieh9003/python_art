@@ -1,4 +1,4 @@
-# 透過 setup.py 編譯 C 擴充模組（pyart.tre:含 tree.pyx 和 art.c）
+# 透過 setup.py 編譯 C 擴充模組（pyart.tree:含 tree.pyx 和 art.c）
 import os
 import re
 import sys
@@ -6,7 +6,7 @@ import sys
 from setuptools import setup, Extension, find_packages
 from setuptools.command.sdist import sdist
 from setuptools.command.build_ext import build_ext
-
+from Cython.Build import cythonize
 #-----------------------------------------------------------------------------
 # Flags and default values.
 #-----------------------------------------------------------------------------
@@ -25,7 +25,7 @@ except ImportError:
     cython_installed = False
 
 
-# current location
+# current location 代表目前 setup.py 檔案所在資料夾的絕對路徑
 here = os.path.abspath(os.path.dirname(__file__))
 
 
@@ -75,6 +75,8 @@ if cython_installed:
             from distutils.command.build_ext import build_ext as _build_ext
             return _build_ext.run(self)
 
+            # os.system("cython --emit-h pyart/SK-RM/art_skrm.pyx")
+
     cmdclass['cython'] = CythonCommand
     cmdclass['build_ext'] = zbuild_ext
 
@@ -123,11 +125,27 @@ def prepare_sources(sources):
 
 
 modules = {
+    # 'art_skrm': dict(
+    #     include_dirs=[
+    #         os.path.join(here, 'pyart'),
+    #     ],
+    #     sources=[
+    #         os.path.join(here, 'pyart', 'art_skrm.pyx'),
+    #     ],
+    #     extra_compile_args=['-std=c99'],
+    # ),
     'tree': dict(
-        include_dirs=[os.path.join(here, 'src')],
+        include_dirs=[
+            os.path.join(here, 'src'),
+            os.path.join(here, 'src', 'SK-RM'),
+        ],
         sources=[
-            source_extension('tree'),
+            # source_extension('tree'),
+            os.path.join(here, 'pyart', 'tree.pyx'),
             os.path.join(here, 'src', 'art.c'),
+            os.path.join(here, 'src', 'SK-RM', 'artSkrm.c'),
+            os.path.join(here, 'src', 'SK-RM', 'hashTable.c')
+            # 'src'	表示你有一個子資料夾叫做 src（可能存放 C 程式）; 'art.c'	你要編譯的 C 原始碼檔案名稱
         ],
         extra_compile_args=['-std=c99'],
     ),
@@ -145,6 +163,36 @@ for module, kwargs in modules.items():
         ext.sources = kwargs['sources']
     extensions.append(ext)
 
+# extensions = [
+#     Extension(
+#         name="pyart.tree",
+#         sources=[
+#             "pyart/tree.pyx",        # 主模組
+#             "src/art.c",             # C 函式
+#             "src/SK-RM/art_skrm.pyx" # ⬅ 加這個，確保含有 art_track_domain_trans()
+#         ],
+#         include_dirs=["src", "src/SK-RM"],
+#         language="c",
+#     )
+# ]
+# extensions.append(
+#     Extension(
+#         "pyart.tree",  # 注意：需寫成 package.module
+#         sources=[
+#             "pyart/tree.pyx",
+#             "src/art.c",
+#         ],
+#         extra_compile_args=["-std=c99"],
+#     )
+# )
+# extensions.append(
+#     Extension(
+#         name="pyart.art_skrm",
+#         sources=["src/SK-RM/art_skrm.pyx"],
+#         include_dirs=["src", "src/SK-RM"],
+#         extra_compile_args=["-std=c99"],
+#     )
+# )
 
 #-----------------------------------------------------------------------------
 # Description, version and other meta information.
@@ -207,7 +255,7 @@ setup(
     keywords='thrift soa',
     license='BSD-3-Clause',
     cmdclass=cmdclass,
-    ext_modules=extensions,
+    ext_modules=cythonize(extensions, language_level="3"),  #, compiler_directives={"language_level": 3}
     packages=find_packages(),
     install_requires=[],
     zip_safe=False,
