@@ -3,15 +3,16 @@ from pyart import Tree
 class ARTWrapper:
     def __init__(self):
         self.tree = Tree()
-        self.timestamp = 0
+        self.origin_method = False
 
     def insert(self, key, value, origin_method=False):
         self.tree.replace(key.encode(), value.encode(), origin_method)
         # self.tree.update({key.encode(): value.encode()})
 
-    def query(self, key):
+    def query(self, key, origin):
         # try:
-        self.tree.get(key.encode())
+        self.origin_method = origin
+        self.tree.get(key.encode(), self.origin_method)
         # except KeyError:
             # return None
 
@@ -25,6 +26,9 @@ class ARTWrapper:
 
     def get_latency_energy(self):
         self.tree.get_latency_energy()
+
+    def get_space(self):
+        self.tree.get_space()
 
     def iterTree(self, callback):
         self.tree.each(callback)

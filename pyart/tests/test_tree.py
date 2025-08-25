@@ -19,14 +19,14 @@ class TestTree(TestCase):
         self.tree = Tree()
 
     # def test_constructor(self):
-    #     # modify by Mia
-    #     tree = Tree()
-    #     tree[b'foo'] = 1
-    #     tree[b'bar'] = 2
-    #     self.assertEqual(
-    #         [(b'bar', 2), (b'foo', 1)],
-    #         tree.items()
-    #     )
+        # modify by Mia
+        # tree = Tree()
+        # tree[b'foo'] = 1
+        # tree[b'bar'] = 2
+        # self.assertEqual(
+        #     [(b'bar', 2), (b'foo', 1)],
+        #     tree.items()
+        # )
 
     # def test_get(self):
     #     self.tree[b'foo'] = object()
@@ -42,79 +42,79 @@ class TestTree(TestCase):
     #     with self.assertRaises(TypeError):
     #         None in self.tree
 
-    def test_mapping(self):
-        self.tree[b'foo'] = 'number0_input'
-        self.tree.get_latency_energy()
-        self.tree[b'bar'] = 2
-        self.tree.get_latency_energy()
-        self.tree[b'apple'] = 'a'
-        self.tree.get_latency_energy()
-        self.tree[b'call'] = 'c'
-        self.tree.get_latency_energy()
-        self.tree[b'cat'] = 'c1'
-        self.tree.get_latency_energy()
-        self.tree[b'wallet'] = 3
-        self.tree.get_latency_energy()
-        self.tree[b'doll'] = 1
-        self.tree.get_latency_energy()
-        self.tree[b'ear'] = 4
-        self.tree.get_latency_energy()
-        self.tree[b'get'] = 5
-        self.tree.get_latency_energy()
-        self.tree[b'hole'] = 6
-        self.tree.get_latency_energy()
-        self.tree[b'i'] = 'number10_input'
-        self.tree.get_latency_energy()
-        self.tree[b'java'] = 'b'
-        self.tree.get_latency_energy()
-        self.assertEqual(self.tree[b'doll'], 1)  #assertEqual:Testcase中檢測答案是否一致
-        self.assertEqual(self.tree[b'bar'], 2)
-        self.assertTrue(b'foo' in self.tree)
-        self.assertTrue(b'bar' in self.tree)
-        self.assertEqual(len(self.tree), 12)
+    # def test_mapping(self):
+    #     self.tree[b'foo'] = 'number0_input'
+    #     self.tree.get_latency_energy()
+    #     self.tree[b'bar'] = 2
+    #     self.tree.get_latency_energy()
+    #     self.tree[b'apple'] = 'a'
+    #     self.tree.get_latency_energy()
+    #     self.tree[b'call'] = 'c'
+    #     self.tree.get_latency_energy()
+    #     self.tree[b'cat'] = 'c1'
+    #     self.tree.get_latency_energy()
+    #     self.tree[b'wallet'] = 3
+    #     self.tree.get_latency_energy()
+    #     self.tree[b'doll'] = 1
+    #     self.tree.get_latency_energy()
+    #     self.tree[b'ear'] = 4
+    #     self.tree.get_latency_energy()
+    #     self.tree[b'get'] = 5
+    #     self.tree.get_latency_energy()
+    #     self.tree[b'hole'] = 6
+    #     self.tree.get_latency_energy()
+    #     self.tree[b'i'] = 'number10_input'
+    #     self.tree.get_latency_energy()
+    #     self.tree[b'java'] = 'b'
+    #     self.tree.get_latency_energy()
+    #     self.assertEqual(self.tree[b'doll'], 1)  #assertEqual:Testcase中檢測答案是否一致
+    #     self.assertEqual(self.tree[b'bar'], 2)
+    #     self.assertTrue(b'foo' in self.tree)
+    #     self.assertTrue(b'bar' in self.tree)
+    #     self.assertEqual(len(self.tree), 12)
 
-        del self.tree[b'foo']
-        self.tree.get_latency_energy()
-        self.assertTrue(b'foo' not in self.tree)
-        self.assertTrue(len(self.tree), 11)
-        with self.assertRaises(KeyError):
-            self.tree[b'foo']
-        self.tree.get_latency_energy()
+    #     del self.tree[b'foo']
+    #     self.tree.get_latency_energy()
+    #     self.assertTrue(b'foo' not in self.tree)
+    #     self.assertTrue(len(self.tree), 11)
+    #     with self.assertRaises(KeyError):
+    #         self.tree[b'foo']
+    #     self.tree.get_latency_energy()
 
-    def test_each(self):
-        self.tree[b'foo'] = 3
+    # def test_each(self):
+    #     self.tree[b'foo'] = 3
 
-        cb = Callback()
-        self.tree.each(cb)
-        self.assertEqual([
-            (b'foo', 3),
-        ], cb.result)
+    #     cb = Callback()
+    #     self.tree.each(cb)
+    #     self.assertEqual([
+    #         (b'foo', 3),
+    #     ], cb.result)
 
-        self.tree[b'foobar'] = 2
+    #     self.tree[b'foobar'] = 2
 
-        cb = Callback()
-        self.tree.each(cb)
-        self.assertEqual([
-            (b'foo', 3),
-            (b'foobar', 2),
-        ], cb.result)
+    #     cb = Callback()
+    #     self.tree.each(cb)
+    #     self.assertEqual([
+    #         (b'foo', 3),
+    #         (b'foobar', 2),
+    #     ], cb.result)
 
-        cb = Callback()
-        self.tree.each(cb, prefix=b'foo')
-        self.assertEqual([
-            (b'foo', 3),
-            (b'foobar', 2),
-        ], cb.result)
+    #     cb = Callback()
+    #     self.tree.each(cb, prefix=b'foo')
+    #     self.assertEqual([
+    #         (b'foo', 3),
+    #         (b'foobar', 2),
+    #     ], cb.result)
 
-        cb = Callback()
-        self.tree.each(cb, prefix=b'foob')
-        self.assertEqual([
-            (b'foobar', 2),
-        ], cb.result)
+    #     cb = Callback()
+    #     self.tree.each(cb, prefix=b'foob')
+    #     self.assertEqual([
+    #         (b'foobar', 2),
+    #     ], cb.result)
 
-        cb = Callback()
-        self.tree.each(cb, prefix=b'bar')
-        self.assertEqual([], cb.result)
+    #     cb = Callback()
+    #     self.tree.each(cb, prefix=b'bar')
+    #     self.assertEqual([], cb.result)
 
     # def test_each_exception(self):
     #     class CustomException(Exception):

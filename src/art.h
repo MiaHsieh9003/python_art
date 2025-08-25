@@ -2,35 +2,12 @@
 #include <time.h>
 #include <stdbool.h>
 #include "ngx-queue.h"
+#include "SK-RM/nodeDef.h"
 
 #ifndef ART_H
 #define ART_H
 
-#define NODE4   0
-#define NODE10  1
-#define NODE16  4
-#define NODE48  2
-#define NODE48_origin 5
-#define NODE256 3
-
-#define NODE4_len 1 //node 4 length is a fundamental unit in a track
-#define NODE10_len 2
-#define NODE48_len 8
-#define NODE256_len 33
-
-#define MIN_UNIT 32 // 32B
-
-#define MAX_PREFIX_LEN_origin 4
-#define MAX_PREFIX_LEN_4 10
-#define MAX_PREFIX_LEN_10 12
-#define MAX_PREFIX_LEN_48 14
-#define MAX_PREFIX_LEN_256 30
-
-#define MAX_DOMAIN_LEN 4U // 0~3 => total 4 len
-#define MAX_DOMAIN 3U // 0 ~ 3 => start from 0, 32B, 64B, 96B => total length 128*8 = 2^10 in a track
-
 static const int WORD_SIZE = 8; // 8 byte
-
 
 typedef int (*art_callback)(void *data, const char *key, uint32_t key_len, void *value);
 
@@ -43,8 +20,13 @@ typedef struct {
     uint8_t type;
     uint16_t partial_len;   //prefix length
     uint8_t num_children;
+    // for modify ART in skrm address
     uint32_t track_domain_id;
-    char partial[MAX_PREFIX_LEN_origin]; //prefix string
+
+    // for origin ART in skrm address
+    uint64_t pointer;
+    // original prefix string
+    char partial[MAX_PREFIX_LEN_origin];
 } art_node;
 
 /**
@@ -54,8 +36,11 @@ typedef struct {
     art_node n;
     unsigned char keys[4];
     art_node *children[4];
-    uint32_t child_track_domain_id[4];
     char partial[MAX_PREFIX_LEN_4]; 
+    // modify child address
+    uint32_t child_track_domain_id[4];
+    // original child address
+    uint64_t child_pointers[4];
 } art_node4;
 
 /**
@@ -76,12 +61,16 @@ typedef struct {
     art_node n;
     unsigned char keys[16];
     art_node *children[16];
+    // original child address
+    uint64_t child_pointers[16];
 } art_node16;
 
 typedef struct {
     art_node n;
     unsigned char keys[256];
     art_node *children[48];
+    // original child address
+    uint64_t child_pointers[48];
 } art_node48_origin;
 
 /**
@@ -105,6 +94,8 @@ typedef struct {
     art_node *children[256];
     uint32_t child_track_domain_id[256];
     char partial[MAX_PREFIX_LEN_256]; 
+    // original child address
+    uint64_t child_pointers[256];
 } art_node256;
 
 /**
@@ -113,9 +104,9 @@ typedef struct {
  */
 typedef struct {
     void *value;
-    // uint8_t type;
     uint32_t key_len;
     uint32_t track_domain_id;
+    uint64_t pointer;
     unsigned char key[];
 } art_leaf;
 
@@ -124,7 +115,6 @@ typedef struct {
  */
 typedef struct {
     art_node *root;
-    bool origin;
     uint64_t size;
 } art_tree;
 
@@ -150,6 +140,12 @@ Skyrmion operation
 get latency and energy
 */
 void art_get_latency_energy();
+
+/*
+* return space size of usage
+*/
+int get_origin_space();
+int get_modify_space();
 
 /**
  * Initializes an ART tree
@@ -199,7 +195,7 @@ void* art_delete(art_tree *t, char *key, int key_len);
  * @return NULL if the item was not found, otherwise
  * the value pointer is returned.
  */
-void* art_search(art_tree *t, char *key, int key_len);
+void* art_search(art_tree *t, char *key, int key_len, bool origin);
 
 /**
  * Returns the minimum valued leaf
@@ -273,6 +269,10 @@ art_leaf* art_iterator_next(art_iterator *iterator);
  * free node in skyrmion space
  */
 void free_node(int type, uint32_t track_domain_id);
+/*
+ * free node in skyrmion space for original ART type
+ */
+void free_origin_node(int type, uint64_t pointer);
 
 
 #endif

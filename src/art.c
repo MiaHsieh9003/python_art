@@ -53,9 +53,13 @@ uint16_t node256_domain = 0;
 uint32_t leaf_track = 0;
 uint16_t leaf_domain = 0;
 
-bool origin_method;
+// bool origin_method;
+
+uint32_t origin_track = 0;
+uint16_t origin_domain = 0;
 
 HashTable * hole_space; //save the skip or delete space
+HashTable * hole_space_origin; //save the skip or delete space in original ART
 
 /**
  * Allocates a node4,
@@ -141,7 +145,18 @@ void art_get_latency_energy(){
         printf("energy: %d, ",energy[i]);
         printf("latency: %d\n",latency[i]);
     }
+    printf("avg node4 skyr: %f\n", get_avg_node4_skyr(NODE4));
+    // printf("avg node10 skyr: %f\n", get_avg_node10_skyr(NODE10));
 }
+
+int get_origin_space(){
+    return global_artskrm->origin_space;
+}
+
+int get_modify_space(){
+    return global_artskrm->modify_space;
+}
+
 /**
  * Initializes an ART tree
  * @return 0 on success.
@@ -149,8 +164,6 @@ void art_get_latency_energy(){
 int init_art_tree(art_tree *t) {
     t->root = NULL;
     t->size = 0;
-    t->origin = false;
-    origin_method = false;
     hole_space = create_table();
     init_artskrm(); 
     return 0;
@@ -182,6 +195,10 @@ int get_max_partial_len(art_node *n) {
         case NODE10:
             max_partial_len = MAX_PREFIX_LEN_10;
             break;
+        case NODE16:
+            max_partial_len = MAX_PREFIX_LEN_origin;
+        case NODE48_origin:
+            max_partial_len = MAX_PREFIX_LEN_origin;
         case NODE48:
             max_partial_len = MAX_PREFIX_LEN_48;
             break;
@@ -274,6 +291,7 @@ static void destroy_node(art_node *n) {
 int destroy_art_tree(art_tree *t) {
     destroy_node(t->root);
     free_table(hole_space);
+    art_clear();
     return 0;
 }
 
@@ -359,8 +377,8 @@ static art_node** find_child(art_node *n, unsigned char c) {
         default:
             abort();
     }
-    art_shift(WORD_SIZE * 2 * 8);   // check all children at one time => shift WORD_SIZE * 2
-    art_detect(WORD_SIZE * 8);
+    art_shift(global_artskrm->WORD_SIZE * 2 * 8);   // check all children at one time => shift WORD_SIZE * 2
+    art_detect(global_artskrm->WORD_SIZE * 8);
     return NULL;
 }
 
@@ -426,17 +444,15 @@ static int leaf_matches(art_leaf *n, char *key, int key_len, int depth) {
     // Fail if the key lengths are different
     // skurmion did not compare key_len
     if (n->key_len != (uint32_t)key_len) return 1;
-
-    // skyrmion key shift and detect to compare
-    if(key_len < global_artskrm->WORD_SIZE){
-        art_shift(key_len * 2 * 8);
-        art_detect(key_len * 8);
-    }
-    else{
+    if(global_artskrm->origin_method){
         art_shift(global_artskrm->WORD_SIZE * 2 * 8);
         art_detect(global_artskrm->WORD_SIZE * 8);
+    }else{
+        // skyrmion key shift and detect to compare        
+        // printf("key_len:%d, min:%d\n", min(key_len, global_artskrm->WORD_SIZE));
+        art_shift(min(key_len, global_artskrm->WORD_SIZE) * 2 * 8);
+        art_detect(min(key_len, global_artskrm->WORD_SIZE) * 8);
     }
-   
     // Compare the keys starting at the depth
     //int memcmp(const void *str1, const void *str2, size_t n)
     // 如果返回值 = 0，则表示 str1 等于 str2 
@@ -461,9 +477,12 @@ static int leaf_matches_link(art_leaf_link *n, char *key, int key_len, int depth
  * @return NULL if the item was not found, otherwise
  * the value pointer is returned.
  */
-void* art_search(art_tree *t, char *key, int key_len) {
+void* art_search(art_tree *t, char *key, int key_len, bool origin) {
     art_node **child;
     art_node *n = t->root;
+    global_artskrm->origin_method = origin;
+    // printf("origin method:%d\n", global_artskrm-> origin_method);
+    // printf("key: %s\n", key);
     int prefix_len, depth = 0;
     int max_partial_len = 0;
     while (n) {
@@ -479,8 +498,14 @@ void* art_search(art_tree *t, char *key, int key_len) {
 
         // Bail if the prefix does not match
         if (n->partial_len) {     
-            art_shift(1 * 8 * 2); //shift to get partial len in prefix_info(the first byte)  
-            art_detect(1 * 8);   // partial len is at the first byte of node in prefix_info
+            if(global_artskrm->origin_method){
+                // printf("origin method:%d\n", origin_method);
+                art_shift(global_artskrm->WORD_SIZE * 2 * 8);
+                art_detect(global_artskrm->WORD_SIZE * 8);
+            }else{
+                art_shift(1 * 8 * 2); //shift to get partial len in prefix_info(the first byte)  
+                art_detect(1 * 8);   // partial len is at the first byte of node in prefix_info
+            }
             max_partial_len = get_max_partial_len(n);
             prefix_len = check_prefix(n, key, key_len, depth);
             if (prefix_len != min(max_partial_len, n->partial_len))  //partial_len為prefix length
@@ -574,17 +599,33 @@ art_leaf* art_maximum(art_tree *t) {
     return maximum((art_node*)t->root);
 }
 
-static art_leaf* make_leaf(char *key, int key_len, void *value) {
+static art_leaf* make_leaf_origin(char *key, int key_len, void *value) {
     int val_len = strlen((char *) value);
-    // printf("make_leaf, val: %s\n", (char *) value);
     art_leaf *l = malloc(sizeof(art_leaf)+key_len);
     l->value = value;
     l->key_len = key_len;
     memcpy(l->key, key, key_len);
-    // printf("(key_len + val_len)  (MIN_UNIT * 4): %d\n", (key_len + val_len) % (MIN_UNIT * 4));
-    // printf("(key_len + val_len) / (MIN_UNIT * 4): %f\n", (float)(key_len + val_len) / (MIN_UNIT * 4));
-    // printf("(char *)value: %c\n", ((char *)value)[0]);
-    if(track <= MAX_TRACK - ceil((float)(key_len + val_len)/(MIN_UNIT * 4))){
+
+    if(origin_track < MAX_TRACK - (origin_domain + key_len + val_len)/MAX_DOMAIN_LEN_origin){
+        l->pointer = art_child_pointer_trans(origin_track, origin_domain);
+        origin_track += (origin_domain + NODE256_len_origin) / MAX_DOMAIN_LEN_origin;
+        origin_domain = (origin_domain + NODE256_len_origin) % MAX_DOMAIN_LEN_origin;
+    }else{
+        // TODO
+        // check hole
+        printf("MEMORY FULL\n");
+    }
+    art_insert_leaf_origin(key, value);
+    return l;
+}
+
+static art_leaf* make_leaf_modify(char *key, int key_len, void *value) {
+    int val_len = strlen((char *) value);
+    art_leaf *l = malloc(sizeof(art_leaf)+key_len);
+    l->value = value;
+    l->key_len = key_len;
+    memcpy(l->key, key, key_len);
+   if(track <= MAX_TRACK - ceil((float)(key_len + val_len)/(MIN_UNIT * 4))){
         leaf_track = track;
         if((key_len + val_len) % (MIN_UNIT * 4) != 0){
             int hole_domain = ceil((float)((key_len + val_len) % (MIN_UNIT * 4))/MIN_UNIT);
@@ -610,6 +651,13 @@ static art_leaf* make_leaf(char *key, int key_len, void *value) {
     return l;
 }
 
+static art_leaf* make_leaf(char *key, int key_len, void *value){
+    if(global_artskrm->origin_method){
+        return make_leaf_origin(key, key_len, value);
+    }else{
+        return make_leaf_modify(key, key_len, value);
+    }
+}
 static unsigned int longest_common_prefix(art_leaf *l1, art_leaf *l2, int depth) {
     int max_cmp = min(l1->key_len, l2->key_len) - depth;
     int idx;
@@ -626,12 +674,15 @@ static void copy_header(art_node *dest, art_node *src) {
     dest->partial_len = src->partial_len;
     dest->num_children = src->num_children;
     dest->track_domain_id = src->track_domain_id;
+    dest->pointer = src->pointer;
     // memcpy(dest->partial, src->partial, min(MAX_PREFIX_LEN, src->partial_len));
 }
 
 static void add_child256(art_node256 *n, art_node **ref, unsigned char c, void *child) {
     // printf("[add NODE256]\n n->n.num_children = %d\n", n->n.num_children);
     if(n->n.num_children == 48){
+        global_artskrm->modify_space -= NODE48_len * MIN_UNIT;
+        global_artskrm->modify_space += NODE256_len * MIN_UNIT;
 
         uint32_t old_track = n->n.track_domain_id >> 2; //get first 30 bits
         
@@ -668,11 +719,7 @@ static void add_child256(art_node256 *n, art_node **ref, unsigned char c, void *
         int old_num_children = n->n.num_children;        
         // skyrmion inject 
         art_insert_node256_all_child(n->n.num_children, n->child_track_domain_id);    //save all children id before
-        compare_and_insert(old_num_children, n->n.num_children);    //modify num_children        
-        art_detect(2 * 8);  // detect num_children at the secound byte of node
-
-        // only modify the 'type' difference
-        art_change_type(NODE48, NODE256);
+        compare_and_insert(old_num_children, n->n.num_children);    //modify num_children 
     } 
     (void)ref;
     n->children[c] = child;
@@ -682,6 +729,20 @@ static void add_child256(art_node256 *n, art_node **ref, unsigned char c, void *
 }
 
 static void add_child256_origin(art_node256 *n, art_node **ref, unsigned char c, void *child) {
+    if(n->n.num_children == 48){
+            global_artskrm->origin_space -= NODE48_len_origin;
+            global_artskrm->origin_space += NODE256_len_origin;
+            if(origin_track < MAX_TRACK - (origin_domain + NODE256_len_origin)/MAX_DOMAIN_LEN_origin){
+                n->n.pointer = art_child_pointer_trans(origin_track, origin_domain);
+                origin_track += (origin_domain + NODE256_len_origin) / MAX_DOMAIN_LEN_origin;
+                origin_domain = (origin_domain + NODE256_len_origin) % MAX_DOMAIN_LEN_origin;
+            }else{
+                // TODO
+                // check hole
+                printf("MEMORY FULL\n");
+            }
+            art_create_node_origin(n->n.prefix_too_long, NODE256, n->n.partial_len, n->n.partial);
+    }
     (void)ref;
     n->n.num_children++;
     n->children[c] = child;
@@ -690,11 +751,31 @@ static void add_child256_origin(art_node256 *n, art_node **ref, unsigned char c,
 static void add_child48_origin(art_node48_origin *n, art_node **ref, unsigned char c, void *child) {
     if (n->n.num_children < 48) {
         printf("[< 48] add origin child48\n");
+        if(n->n.num_children == 10){
+            global_artskrm->origin_space -= NODE16_len_origin;
+            global_artskrm->origin_space += NODE48_len_origin;
+            if(origin_track < MAX_TRACK - (origin_domain + NODE48_len_origin)/MAX_DOMAIN_LEN_origin){
+                n->n.pointer = art_child_pointer_trans(origin_track, origin_domain);
+                origin_track += (origin_domain + NODE48_len_origin) / MAX_DOMAIN_LEN_origin;
+                origin_domain = (origin_domain + NODE48_len_origin) % MAX_DOMAIN_LEN_origin;
+            }else{
+                // TODO
+                // check hole
+                printf("MEMORY FULL\n");
+            }
+            art_create_node_origin(n->n.prefix_too_long, NODE48_origin, n->n.partial_len, n->n.partial);
+        }
+        int old_num_children = n->n.num_children;
         int pos = 0;
         while (n->children[pos]) pos++;
         n->children[pos] = child;
-        n->keys[c] = pos + 1;
+        n->keys[c] = pos + 1;   //0 表示「這個字元還沒有對應的子節點」，即 未使用，因此謊前一個紀錄，不是0~47而是1~48
         n->n.num_children++;
+                
+        // skyrmion inject of node
+        art_insert_new_pair(n->keys[c], n->children[pos]->pointer);
+        compare_and_insert_origin(old_num_children, n->n.num_children);
+ 
     } else {
         art_node256 *new = alloc_node256();
         for (int i=0;i<256;i++) {
@@ -704,6 +785,9 @@ static void add_child48_origin(art_node48_origin *n, art_node **ref, unsigned ch
         }
         copy_header((art_node*)new, (art_node*)n);
         *ref = (art_node*)new;
+        // delete node48 in original type
+        art_delete_node_origin(n->n.prefix_too_long, NODE48_origin, n->n.partial_len, n->n.partial, n->n.num_children, n->keys, n->child_pointers);
+        free_origin_node(NODE48_origin, n->n.pointer);
         free(n);
         add_child256_origin(new, ref, c, child);
     }
@@ -714,6 +798,8 @@ static void add_child48(art_node48 *n, art_node **ref, unsigned char c, void *ch
     if (n->n.num_children < 48) {
         // printf("[add NODE48] \nadd_child48 < 48: n->keys = '%c' (%d)\n", n->keys[0], n->keys[0]);   
         if(n->n.num_children == 10){
+            global_artskrm->modify_space -= NODE10_len * MIN_UNIT;
+            global_artskrm->modify_space += NODE48_len * MIN_UNIT;
 
             uint8_t old_domain = n->n.track_domain_id % 4;  //get last 2 bits
             uint32_t old_track = n->n.track_domain_id >> 2; //get first 30 bits
@@ -781,10 +867,24 @@ static void add_child48(art_node48 *n, art_node **ref, unsigned char c, void *ch
 }
 
 static void add_child16(art_node16 *n, art_node **ref, unsigned char c, void *child) {
-    printf("in add_child16\n");
+    // printf("in origin add_child16\n");
     if (n->n.num_children < 16) {
+        if(n->n.num_children == 4){
+            global_artskrm->origin_space -= NODE4_len_origin;
+            global_artskrm->origin_space += NODE16_len_origin;
+            if(origin_track < MAX_TRACK - (origin_domain + NODE16_len_origin)/MAX_DOMAIN_LEN_origin){
+                n->n.pointer = art_child_pointer_trans(origin_track, origin_domain);
+                origin_track += (origin_domain + NODE16_len_origin) / MAX_DOMAIN_LEN_origin;
+                origin_domain = (origin_domain + NODE16_len_origin) % MAX_DOMAIN_LEN_origin;
+            }else{
+                // TODO
+                // check hole
+                printf("MEMORY FULL\n");
+            }
+            art_create_node_origin(n->n.prefix_too_long, NODE16, n->n.partial_len, n->n.partial);
+        }
         __m128i cmp;
-        printf("[< 16]\n");
+        // printf("[< 16]\n");
         // Compare the key to all 16 stored keys
         cmp = _mm_cmplt_epi8(_mm_set1_epi8(c),
                 _mm_loadu_si128((__m128i*)n->keys));
@@ -792,6 +892,7 @@ static void add_child16(art_node16 *n, art_node **ref, unsigned char c, void *ch
         unsigned mask = (1 << n->n.num_children) - 1;
         unsigned bitfield = _mm_movemask_epi8(cmp) & mask;
         // Check if less than any
+        int old_num_children = n->n.num_children;
         unsigned idx;
         if (bitfield) {
             idx = __builtin_ctz(bitfield);
@@ -807,6 +908,11 @@ static void add_child16(art_node16 *n, art_node **ref, unsigned char c, void *ch
         n->keys[idx] = c;
         n->children[idx] = child;
         n->n.num_children++;
+
+        // skyrmion inject of node
+        art_insert_new_pair(n->keys[idx], n->children[idx]->pointer);
+        compare_and_insert_origin(old_num_children, n->n.num_children);
+
     } else {
         printf("[> 16]\n");
         art_node48_origin *new = alloc_node48_origin();
@@ -818,14 +924,21 @@ static void add_child16(art_node16 *n, art_node **ref, unsigned char c, void *ch
         }
         copy_header((art_node*)new, (art_node*)n);
         *ref = (art_node*)new;
+        // delete node16 in skrm
+        art_delete_node_origin(n->n.prefix_too_long, NODE16, n->n.partial_len, n->n.partial, n->n.num_children, n->keys, n->child_pointers);
+        // free node and record in hole space
+        free_origin_node(NODE16, n->n.pointer);
         free(n);
         add_child48_origin(new, ref, c, child);
     }
 }
 
 static void add_child10(art_node10 *n, art_node **ref, unsigned char c, void *child) {
-    printf("[add NODE10]\n");
+    bool create_success = false;
+    // printf("[add NODE10]\n");
     if (n->n.num_children < 10) {
+        global_artskrm->modify_space -= NODE4_len * MIN_UNIT;
+        global_artskrm->modify_space += NODE10_len * MIN_UNIT;
         // printf("[<10] add_child10 < 10: n->n.num_children = %d, c = %c\n", n->n.num_children, c);
         // update address 當node10_domain == 0，分配新的track給node10
         if(n->n.num_children == 4)
@@ -846,7 +959,7 @@ static void add_child10(art_node10 *n, art_node **ref, unsigned char c, void *ch
                     // when memory still full need to find node48, node256 or leaf "hole"
                     return;
                 }
-                art_trans_node4_to_node10(old_track, old_domain, *track, *domain);
+                create_success = art_trans_node4_to_node10(old_track, old_domain, *track, *domain);
             }else {
                 if(node10_domain == 0){
                     node10_track = track;
@@ -869,8 +982,12 @@ static void add_child10(art_node10 *n, art_node **ref, unsigned char c, void *ch
                 // add current track_domain_id
                 n->n.track_domain_id = art_track_domain_trans(node10_track, node10_domain);
                 // compare 'track', 'domain' difference between node4 and node10
-                art_trans_node4_to_node10(old_track, old_domain, node10_track, node10_domain);
+                create_success = art_trans_node4_to_node10(old_track, old_domain, node10_track, node10_domain);
             }       
+            if(!create_success){                
+                art_delete_node_origin(n->n.prefix_too_long, NODE4, n->n.partial_len, n->partial, n->n.num_children, n->keys, (uint64_t *)n->child_track_domain_id);
+                art_create_node_origin(n->n.prefix_too_long, NODE10, n->n.partial_len, n->partial);
+            }
             // only modify the 'type' difference
             art_change_type(NODE4, NODE10);
         }
@@ -890,8 +1007,11 @@ static void add_child10(art_node10 *n, art_node **ref, unsigned char c, void *ch
 
         // skyrmion inject 
         art_insert_new_pair(n->keys[idx], n->children[idx]->track_domain_id);   // save child track_domain_id in skyrmion
-        compare_and_insert(old_num_children, n->n.num_children);    //modify num_children
-
+        if(!create_success){
+            compare_and_insert_origin(old_num_children, n->n.num_children);
+        }else{
+            compare_and_insert(old_num_children, n->n.num_children);    //modify num_children
+        }
     }else{
         // printf("add_child10 > 10: n->n.num_children = %d, c = %c\n", n->n.num_children, c);
         // new = 指向 art_node48 結構的指標
@@ -913,13 +1033,28 @@ static void add_child10(art_node10 *n, art_node **ref, unsigned char c, void *ch
         free(n);
         add_child48(new, ref, c, child);
     }
-    print_table(hole_space);
+    // print_table(hole_space);
 }
 
 static void add_child4_origin(art_node4 *n, art_node **ref, unsigned char c, void *child) {
-    printf("in add_child4_origin\n");
+    // printf("in add_child4_origin\n");
     if (n->n.num_children < 4) {
-        printf("[<4] origin\n");
+        // printf("[<4] origin\n");
+        if(n->n.num_children == 0){
+            global_artskrm->origin_space += NODE4_len_origin;
+
+            if(origin_track < MAX_TRACK - (origin_domain + NODE4_len_origin)/MAX_DOMAIN_LEN_origin){
+                n->n.pointer = art_child_pointer_trans(origin_track, origin_domain);
+                origin_track += (origin_domain + NODE4_len_origin) / MAX_DOMAIN_LEN_origin;
+                origin_domain = (origin_domain + NODE4_len_origin) % MAX_DOMAIN_LEN_origin;
+            }else{
+                // TODO
+                // check hole
+                printf("MEMORY FULL\n");
+            }
+            art_create_node_origin(n->n.prefix_too_long, NODE4, n->n.partial_len, n->partial);
+        }
+        int old_num_children = n->n.num_children;
         int idx;
         for (idx=0; idx < n->n.num_children; idx++) {
             if (c < n->keys[idx]) break;
@@ -933,10 +1068,15 @@ static void add_child4_origin(art_node4 *n, art_node **ref, unsigned char c, voi
         // Insert element
         n->keys[idx] = c;
         n->children[idx] = child;
+        // save original child pointer
+        n->child_pointers[idx] = n->children[idx]->pointer;
         n->n.num_children++;
 
+        // skyrmion inject of node
+        art_insert_new_pair(n->keys[idx], n->children[idx]->pointer);
+        compare_and_insert_origin(old_num_children, n->n.num_children);
     } else {
-        printf("[>4] origin\n");
+        // printf("[>4] origin\n");
         art_node16 *new = alloc_node16();
 
         // Copy the child pointers and the key map
@@ -946,6 +1086,9 @@ static void add_child4_origin(art_node4 *n, art_node **ref, unsigned char c, voi
                 sizeof(unsigned char)*n->n.num_children);
         copy_header((art_node*)new, (art_node*)n);
         *ref = (art_node*)new;
+        // free origin node4
+        art_delete_node_origin(n->n.prefix_too_long, NODE4, n->n.partial_len, n->partial, n->n.num_children, n->keys, n->child_pointers);
+        free_origin_node(NODE4, n->n.pointer);
         free(n);
         add_child16(new, ref, c, child);
     }
@@ -954,12 +1097,13 @@ static void add_child4_origin(art_node4 *n, art_node **ref, unsigned char c, voi
 
 static void add_child4_modify(art_node4 *n, art_node **ref, unsigned char c, void *child) {
     //why isn't n->n.num_children <=4 but <4? Because 如果已經有 4 個，那就不能再加入了
-    printf("[add NODE4]\n");
+    // printf("[add NODE4]\n");
     if (n->n.num_children < 4) {
         // printf("[<4] add_child4 < 4, c = %c, n->n.num_children = %d, n->partial_len = %d\n",c, n->n.num_children, n->n.partial_len);
         // update address if node4 need new track allocate
         if(n->n.num_children == 0)
         {      
+            global_artskrm->modify_space += NODE4_len * MIN_UNIT;
             if(track > MAX_TRACK-1){
                 // when memory full need to find "hole"
                 uint32_t *track = NULL;
@@ -1015,27 +1159,14 @@ static void add_child4_modify(art_node4 *n, art_node **ref, unsigned char c, voi
         compare_and_insert(old_num_children, n->n.num_children);    //change num_children
     } else {
         // printf("[>4] add_child4>4, c = %c, n->n.num_children = %d\n", c, n->n.num_children);
-        
-        //origin node16 part
-        art_node16 *new16 = alloc_node16();
-        memcpy(new16->children, n->children,
-                sizeof(void*)*n->n.num_children);
-        memcpy(new16->keys, n->keys,
-                sizeof(unsigned char)*n->n.num_children);
-        copy_header((art_node*)new16, (art_node*)n);
-        *ref = (art_node*)new16;
-        add_child16(new16, ref, c, child);
 
-        // modeify node10 part
+        // modify ART trans into node10 part
         art_node10 *new = alloc_node10();
         memcpy(new->children, n->children,
                 sizeof(void*)*n->n.num_children);
         memcpy(new->keys, n->keys,
                 sizeof(unsigned char)*n->n.num_children);
         copy_header((art_node*)new, (art_node*)n);  // include prefix_too_long, track_domain_id is saving
-        memcpy(new->child_track_domain_id, n->child_track_domain_id,
-                sizeof(uint32_t)* n->n.num_children);
-        memcpy(new->partial, n->partial, n->n.partial_len);
         *ref = (art_node*)new;
         // free node4 track domain
         free_node(NODE4, n->n.track_domain_id);
@@ -1046,25 +1177,33 @@ static void add_child4_modify(art_node4 *n, art_node **ref, unsigned char c, voi
 
 
 static void add_child4( art_node4 *n, art_node **ref, unsigned char c, void *child){
-    if(origin_method){
+    if(global_artskrm->origin_method){
+        // printf("global_artskrm->origin_method:%d\n", global_artskrm->origin_method);
         add_child4_origin(n, ref, c, child);
     }else{
         add_child4_modify(n, ref, c, child);
     }
 }
 
+void free_origin_node(int type, uint64_t pointer){
+    uint32_t free_track = pointer >> 7;
+    uint16_t free_domain = pointer % 7;
+    set(hole_space_origin, type, free_track, free_domain);  
+    // printf("free origin node type:%d, n.pointer: %lu\n", type, pointer);
+}
+
 void free_node(int type, uint32_t track_domain_id){
     uint32_t free_track = track_domain_id >> 2;
     uint16_t free_domain = track_domain_id % 4;
     set(hole_space, type, free_track, free_domain);  
-    printf("free node n.track_domain_id: %d\n", track_domain_id);
+    // printf("free modify node type:%d, n.track_domain_id: %d\n", type, track_domain_id);
 }
 
 void free_node_n(int type, uint32_t track_domain_id, void* n){
     uint32_t free_track = track_domain_id >> 2;
     uint16_t free_domain = track_domain_id % 4;
     set_with_node(hole_space, type, free_track, free_domain, n);  
-    printf("free node count n.track_domain_id: %d\n", track_domain_id);
+    printf("free node n count n.track_domain_id: %d\n", track_domain_id);
 }
 static void add_child(art_node *n, art_node **ref, unsigned char c, void *child) {
     // printf("add child\n");
@@ -1169,25 +1308,25 @@ static void* recursive_insert(art_node *n, art_node **ref, char *key, unsigned i
     // If we are at a leaf, we need to replace it with a node
     if (IS_LEAF(n)) {
         art_leaf *l = LEAF_RAW(n);
-        // printf("IS_LEAF, old_val:%s\n", (char *)l->value);
 
-        // Check if we are updating an existing value 
-        //leaf_matches() ==  0 if (l->key == key)
+        // Check if we are updating an existing value
         if (!leaf_matches(l, key, key_len, depth)) {
-            // printf("if leaf_matches\n");
             *old = 1;
             char *old_val = my_strdup(l->value);
-            // printf("leaf_matches old_value:%s, new_val:%s\n",(char *)old_val, ((char *)value));
             l->value = value;   //replace original data to value from input
-            // permutation write
-            // printf("old val skrm count:%d\n", art_skyrmions_counter_str((char *)old_val));
-            // printf("new val skrm count:%d\n", art_skyrmions_counter_str((char *)l->value));
-            // printf("remove: %d\n",MAX(art_skyrmions_counter_str((char *)old_val) - art_skyrmions_counter_str((char *)l->value), 0));
-            art_shift((global_artskrm->WORD_SIZE * 8 + 1) * 2 + MAX(art_skyrmions_counter_str(((char *)old_val)) - art_skyrmions_counter_str(((char *)l->value)), 0)); //shift to get val_len in prefix_info(the first byte)
-            art_detect(global_artskrm->WORD_SIZE * 8); //detect if prefix_info
-            art_remove(MAX(art_skyrmions_counter_str((char *)old_val) - art_skyrmions_counter_str((char *)l->value), 0)); //remove skyrmion if needed
-            art_inject(MAX(art_skyrmions_counter_str((char *)l->value) - art_skyrmions_counter_str((char *)old_val), 0)); //inject skyrmion if needed
-
+            if(global_artskrm->origin_method){
+                // naive write
+                art_shift(global_artskrm->WORD_SIZE * 8 * 2);
+                art_detect(global_artskrm->WORD_SIZE * 8);
+                art_remove(art_skyrmions_counter_str((char *)old_val));
+                art_inject(art_skyrmions_counter_str((char *)l->value));
+            }else{
+                // permutation write須以一個word為單位
+                art_shift((global_artskrm->WORD_SIZE * 8 + 1) * 2 + MAX(art_skyrmions_counter_str(((char *)old_val)) - art_skyrmions_counter_str(((char *)l->value)), 0)); //shift to get val_len in prefix_info(the first byte)
+                art_detect(global_artskrm->WORD_SIZE * 8); //detect if prefix_info
+                art_remove(MAX(art_skyrmions_counter_str((char *)old_val) - art_skyrmions_counter_str((char *)l->value), 0)); //remove skyrmion if needed
+                art_inject(MAX(art_skyrmions_counter_str((char *)l->value) - art_skyrmions_counter_str((char *)old_val), 0)); //inject skyrmion if needed
+            }
             return old_val; //return original data
         }
         // printf("if not leaf_matches\n");
@@ -1287,8 +1426,7 @@ void* art_insert(art_tree *t, char *key, int key_len, void *value, bool origin) 
     // printf("[ART INSERT]\n");
     char *copy_value = my_strdup((char *)value);    //** 一開始就複製一次 value, 確保不會受到共用pointer影響
     int old_val = 0;
-    t->origin = origin;
-    origin_method = origin;
+    global_artskrm->origin_method = origin;
 
     void *old = recursive_insert(t->root, &t->root, key, key_len, copy_value, 0, &old_val);
     if (!old_val) t->size++;

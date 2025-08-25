@@ -1,18 +1,10 @@
 =================================================
-pyart - Adaptive Radix Tree
+SkART - Skyrmion racetrack memory Adaptive Radix Tree
 =================================================
 
-|travis| |bitdeli|
+|Based on|
 
-.. |travis| image:: https://secure.Atravis-ci.org/blackwithwhite666/pyart.png?branch=master
-   :alt: Travis badge
-   :target: https://travis-ci.org/blackwithwhite666/pyart
-
-.. |bitdeli| image:: https://d2weczhvl823v0.cloudfront.net/blackwithwhite666/pyart/trend.png
-   :alt: Bitdeli badge
-   :target: https://bitdeli.com/free
-
-This library is a thin python wrapper around ART implementation in https://raw.github.com/armon/hlld
+.. |Based on| github link: https://github.com/blackwithwhite666/pyart
 
 Installing
 ==========
@@ -31,93 +23,27 @@ Get the source:
 
 ::
 
-    git clone https://github.com/blackwithwhite666/pyart.git
+    git clone https://github.com/MiaHsieh9003/python_art
+    cd pyart
 
+
+Excute steps
+================
+
+install
+::
+    Step 1: pip install . --user
+
+    note: if need clean and rebuild 
+    .. python3 setup.py clean --all
+    .. rm -rf build/ pyart/*.so
+    .. pip install . --user
 
 Compile extension:
-
 ::
 
-     python setup.py build_ext --inplace
+    Step2: python setup.py build_ext --inplace
 
-
-
-Usage
-=====
-
-Work with tree as with plain mapping:
-
-::
-
-    from pyart import Tree
-    t = Tree()
-    t[b'foo'] = 1
-    t[b'bar'] = 2
-    assert t[b'foo'] == 1
-    assert t[b'bar'] == 2
-    assert b'foo' in t
-    assert b'bar' in t
-    assert len(t) == 2
-    del t[b'foo']
-    assert b'foo' not in t
-    assert len(t) == 1
-
-
-Iteration over each element of tree:
-
-::
-
-    from pyart import Tree
-    t = Tree()
-    t[b'foo'] = object()
-    def cb(key, value): print(key, value)
-    t.each(cb)
-    >>> ('foo', <object object at 0x7f186020bd70>)
-    t[b'foobar'] = object()
-    t.each(cb)
-    >>> ('foo', <object object at 0x7f186020bd70>)
-    >>> ('foobar', <object object at 0x7f186020bd80>)
-    t.each(cb, prefix=b'foo')
-    >>> ('foo', <object object at 0x7f186020bd70>)
-    >>> ('foobar', <object object at 0x7f186020bd80>)
-    t.each(cb, prefix=b'bar')
-
-
-Find minimum and maximum:
-
-::
-
-    from pyart import Tree
-    t = Tree()
-    t[b'test'] = None
-    t[b'foo'] = None
-    t[b'bar'] = None
-    assert t.minimum == (b'bar', None)
-    assert t.maximum == (b'test', None)
-
-Copy tree:
-
-::
-
-    from pyart import Tree
-    t = Tree()
-    t[b'test'] = object()
-    c = t.copy()
-    assert c[b'test'] is t[b'test']
-    assert len(c) == len(t)
-
-
-TODO
-====
-
-- Implement plain python iterator over tree;
-
-
-Running the test suite
-======================
-
-Use Tox to run the test suite:
-
-::
-
-    tox
+python test
+:: 
+    Step3: excute tests/art_ycsb.py

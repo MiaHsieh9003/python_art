@@ -1,9 +1,9 @@
 from libc.time cimport timespec
-from libc.stdlib cimport free, calloc
+from libc.stdlib cimport free, calloc, malloc
 from cpython.ref cimport Py_INCREF, Py_DECREF
 from cpython.list cimport PyList_New, PyList_SET_ITEM
 from libc.stdint cimport uint8_t, uint16_t, uint32_t, uint64_t
-
+from libc.string cimport memcpy
 
 #cdef extern from "stdint.h" nogil:
 
@@ -34,10 +34,12 @@ cdef extern from "art.h":
     int destroy_art_tree(art_tree *c_tree)
 
     void art_get_latency_energy()
+    int get_origin_space()
+    int get_modify_space()
     uint64_t art_size(art_tree *c_tree)
     void* art_insert(art_tree *c_tree, char *key, int key_len, void *value, bint origin_method)
     void* art_delete(art_tree *c_tree, char *key, int key_len)
-    void* art_search(art_tree *c_tree, char *key, int key_len)
+    void* art_search(art_tree *c_tree, char *key, int key_len, bint origin_method)
     art_leaf* art_minimum(art_tree *c_tree)
     art_leaf* art_maximum(art_tree *c_tree)
     int art_iter(art_tree *c_tree, art_callback cb, void *data)
@@ -115,10 +117,15 @@ cdef class Tree(object):
     cpdef get_latency_energy(self):
         art_get_latency_energy()
 
-    cpdef get(self, bytes key, default=None):
+    cpdef get_space(self):
+        print("space size of origin ART: ", get_origin_space())
+        print("space size of SkART(modify ART): ", get_modify_space())
+
+    cpdef get(self, bytes key, default=None, bint origin_method=False):
+        # print("get origin_method =", origin_method)   
         cdef char* c_key = key
         cdef Py_ssize_t length = len(key)
-        cdef void* c_value = art_search(self._c_tree, c_key, length)
+        cdef void* c_value = art_search(self._c_tree, c_key, length, origin_method)
         if c_value is NULL:
             if default is not None:
                 return default
@@ -139,16 +146,22 @@ cdef class Tree(object):
         return obj
 
     # update() 可以一次更新好幾個，replace() 只能一次更新一個
-    cpdef replace(self, bytes key, bytes value, bint origin_method=False):
+    cpdef replace(self, bytes key, object value, bint origin_method=False):
+        cdef bytes b_val
+
+        if isinstance(value, bytes):
+            b_val = value
+        else:
+            b_val = str(value).encode()  # 轉成字串再 encode 成 bytes    
+
         cdef char* c_key = key
-        cdef char* c_val = value
+        cdef char* c_val = b_val
         cdef Py_ssize_t length = len(key)
-        #Py_INCREF(value)
         cdef void* c_value = art_insert(self._c_tree, c_key, length, <void *>c_val, origin_method)
+        #free(c_val)
         if c_value is NULL:
             return None
         #cdef object obj = <object>c_value
-        #Py_DECREF(obj)
         return None
         #return bytes(c_value)
 
@@ -167,7 +180,7 @@ cdef class Tree(object):
     def __contains__(self, bytes key not None):
         cdef char* c_key = key
         cdef Py_ssize_t length = len(key)
-        cdef void* c_value = art_search(self._c_tree, c_key, length)
+        cdef void* c_value = art_search(self._c_tree, c_key, length, origin_method=False)
         return c_value is not NULL
 
     property minimum:

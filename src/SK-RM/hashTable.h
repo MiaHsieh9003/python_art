@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdint.h>
 #include "../art.h"
+#include "nodeDef.h"
 #ifndef HASHTABLE_H
 #define HASHTABLE_H
 
